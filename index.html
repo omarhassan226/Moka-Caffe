@@ -1,0 +1,587 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl" data-theme="dark">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description"
+    content="نظام محاسبي ذكي لإدارة الأصناف والكميات وحساب الضرائب والفواتير لعلامات المخابز والمطاعم مستخرج من فواتير موكا وديلى دوز">
+  <title>Móka ERP | نظام إدارة الفواتير والمحاسبة الذكي</title>
+  <link rel="stylesheet" href="css/design-system.css">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+
+<body>
+
+  <div class="app-container">
+    <!-- Header -->
+    <header class="app-header">
+      <div class="brand-section">
+        <div class="brand-logo-badge">M</div>
+        <div class="brand-info">
+          <h1>
+            Móka Billing ERP
+            <span class="brand-badge">إصدار الشركات 2.0</span>
+          </h1>
+          <p>نظام محاسبة الأصناف، حساب الضرائب (SCHD 5% & VAT 14%)، وشيت الأسعار الديناميكي</p>
+        </div>
+      </div>
+
+      <div class="header-actions">
+        <button class="btn btn-primary" onclick="exportToExcel()">
+          <span>📊 تصدير Excel</span>
+        </button>
+        <button class="btn btn-secondary" onclick="switchTab('invoice')">
+          <span>🧾 الفاتورة الرسمية</span>
+        </button>
+        <button class="btn-icon" id="btn-theme-toggle" onclick="toggleTheme()" title="تغيير المظهر">
+          ☀️
+        </button>
+        <button class="btn-icon" id="btn-api-settings" onclick="openApiSettingsModal()" title="إعدادات رابط الخادم (API)">
+          ⚙️
+        </button>
+        <button class="btn-icon" onclick="resetFactoryData()" title="تحديث البيانات من قاعدة البيانات">
+          🔄
+        </button>
+      </div>
+    </header>
+
+    <!-- Navigation Tabs Bar -->
+    <nav class="nav-tabs-bar">
+      <button class="tab-btn active" data-tab="details">
+        <span>📋 تفاصيل الأصناف والكميات</span>
+      </button>
+      <button class="tab-btn" data-tab="categories">
+        <span>🍰 تجميع حسب نوع الصنف</span>
+      </button>
+      <button class="tab-btn" data-tab="parser">
+        <span>⚡ المحلل الذكي للنصوص (Smart Paste)</span>
+      </button>
+      <button class="tab-btn" data-tab="catalog">
+        <span>🏷️ شيت الأسعار والأصناف (Catalog)</span>
+      </button>
+      <button class="tab-btn" data-tab="invoice">
+        <span>📄 الفاتورة المعتمدة للطباعة</span>
+      </button>
+      <button class="tab-btn" data-tab="architecture" style="display: none;">
+        <span>🚀 الربط وقابلية التوسع (Full-Stack & Mongo)</span>
+      </button>
+    </nav>
+
+    <!-- Main Workspace Area -->
+    <main class="main-content">
+
+      <!-- Branch / Order Selector Bar -->
+      <section class="branch-selector-card">
+        <div class="branch-selector-row">
+          <div class="branch-selector-label-group">
+            <span class="branch-selector-title">📍 اختر الطلبية أو الفرع:</span>
+            <label class="consolidate-checkbox-label">
+              <input type="checkbox" id="toggle-consolidate">
+              <span>دمج الأصناف المتشابهة تلقائياً</span>
+            </label>
+          </div>
+          <div class="branch-actions-wrap" id="branch-actions-container">
+            <!-- Dynamic delete branch button rendered here when a branch is selected -->
+          </div>
+          <div class="branch-pills" id="branch-pills-container">
+            <!-- Rendered dynamically -->
+          </div>
+        </div>
+      </section>
+
+      <!-- Missing Items Warning Alert -->
+      <div id="missing-items-alert"
+        style="display: none; background: var(--color-rose-bg); border: 1px solid rgba(244, 63, 94, 0.4); border-radius: var(--radius-md); padding: 0.75rem 1.25rem; margin-bottom: 1.5rem; justify-content: space-between; align-items: center; color: var(--color-rose);">
+        <!-- Injected via JS -->
+      </div>
+
+      <!-- Financial KPI Metrics Grid -->
+      <section class="kpi-grid">
+        <div class="kpi-card">
+          <div class="kpi-card-header">
+            <span class="kpi-title">إجمالي عدد القطع</span>
+            <div class="kpi-icon" style="background: var(--color-purple-bg); color: var(--color-purple);">📦</div>
+          </div>
+          <div class="kpi-value" id="kpi-total-units">0</div>
+          <div class="kpi-subtext">وحدة مبيعات مطلوبة</div>
+        </div>
+
+        <div class="kpi-card">
+          <div class="kpi-card-header">
+            <span class="kpi-title">المبلغ قبل الضريبة</span>
+            <div class="kpi-icon" style="background: var(--color-sky-bg); color: var(--color-sky);">💵</div>
+          </div>
+          <div class="kpi-value" id="kpi-untaxed">0.00</div>
+          <div class="kpi-subtext">Untaxed Base Amount</div>
+        </div>
+
+        <div class="kpi-card">
+          <div class="kpi-card-header">
+            <span class="kpi-title">ضريبة الجدول (5%)</span>
+            <div class="kpi-icon" style="background: var(--color-purple-bg); color: var(--color-purple);">📑</div>
+          </div>
+          <div class="kpi-value" id="kpi-schd5">0.00</div>
+          <div class="kpi-subtext">Schedule Tax 5% (حلويات وكيك ومخبوزات)</div>
+        </div>
+
+        <div class="kpi-card">
+          <div class="kpi-card-header">
+            <span class="kpi-title">ضريبة القيمة المضافة (14%)</span>
+            <div class="kpi-icon" style="background: var(--color-sky-bg); color: var(--color-sky);">🏛️</div>
+          </div>
+          <div class="kpi-value" id="kpi-vat14">0.00</div>
+          <div class="kpi-subtext">VAT 14% (ساندوتشات وسلطات وباتيسري)</div>
+        </div>
+
+        <div class="kpi-card featured">
+          <div class="kpi-card-header">
+            <span class="kpi-title" style="color: var(--accent-gold-light);">الإجمالي النهائي الشامل</span>
+            <div class="kpi-icon" style="background: var(--accent-gold); color: #fff;">💎</div>
+          </div>
+          <div class="kpi-value" id="kpi-grand-total">0.00</div>
+          <div class="kpi-subtext" style="color: var(--accent-gold);">Total Including All Taxes</div>
+        </div>
+      </section>
+
+      <!-- ==================== VIEW 1: ITEMS DETAILS ==================== -->
+      <section class="view-panel active" id="view-details">
+        <div class="panel-card">
+          <div class="panel-header">
+            <div class="panel-title">
+              <span>📋 تفاصيل الأصناف المحسوبة</span>
+            </div>
+
+            <div class="filter-bar">
+              <div class="search-input-wrapper">
+                <span class="search-icon">🔍</span>
+                <input type="text" id="search-input" placeholder="بحث بالاسم أو الكود...">
+              </div>
+
+              <select id="category-filter" class="form-control" style="width: auto; padding: 0.55rem 1rem;">
+                <option value="all">كافة التصنيفات (الكل)</option>
+              </select>
+
+              <button class="btn btn-secondary" onclick="exportToExcel()">
+                <span>📥 تحميل كملف CSV / Excel</span>
+              </button>
+            </div>
+          </div>
+
+          <div class="table-responsive">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>كود الصنف</th>
+                  <th>اسم الصنف</th>
+                  <th>التصنيف</th>
+                  <th style="text-align: center;">الكمية</th>
+                  <th>سعر القطعة الصافي</th>
+                  <th>نوع الضريبة</th>
+                  <th>قيمة الضريبة</th>
+                  <th>السعر شامل الضريبة</th>
+                  <th>الإجمالي النهائي</th>
+                  <th>إجراءات</th>
+                </tr>
+              </thead>
+              <tbody id="items-table-body">
+                <!-- Populated dynamically via JS -->
+              </tbody>
+            </table>
+          </div>
+          <div id="items-pagination-container"></div>
+        </div>
+      </section>
+
+      <!-- ==================== VIEW 2: CATEGORIES BREAKDOWN ==================== -->
+      <section class="view-panel" id="view-categories">
+        <div class="panel-card">
+          <div class="panel-header">
+            <div class="panel-title">
+              <span>🍰 توزيع المبيعات وتجميع الأسعار حسب نوع الصنف</span>
+            </div>
+            <p style="font-size: 0.88rem; color: var(--text-secondary);">
+              يتم تجميع أسعار وكميات الأصناف المتجانسة معاً واحتساب الضرائب الخاصة بكل فئة بدقة.
+            </p>
+          </div>
+
+          <div class="categories-summary-grid" id="categories-grid">
+            <!-- Dynamically populated -->
+          </div>
+        </div>
+      </section>
+
+      <!-- ==================== VIEW 3: SMART TEXT PARSER ==================== -->
+      <section class="view-panel" id="view-parser">
+        <div class="panel-card">
+          <div class="panel-header">
+            <div class="panel-title">
+              <span>⚡ المحلل الذكي للنصوص (Smart Order Parser)</span>
+            </div>
+            <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+              <button class="btn btn-secondary btn-sample-text" data-sample="west">نموذج طلب ويست</button>
+              <button class="btn btn-secondary btn-sample-text" data-sample="tagamoa">نموذج طلب التجمع</button>
+              <button class="btn btn-secondary btn-sample-text" data-sample="custom">نموذج طلب مخصص</button>
+            </div>
+          </div>
+
+          <p style="font-size: 0.88rem; color: var(--text-secondary); margin-bottom: 1.25rem;">
+            الآن يمكنك لصق أي نص طلبية مكتوب بأي شكل: سواء كان الرقم في الأول (مثل: <code>2 شوكلت كوكيز</code>) أو في
+            الآخر (مثل: <code>بنانا بودينج 12</code>) أو بدون مسافات! النظام يتعرف على الأصناف تلقائياً ويطابقها مع شيت
+            الأسعار بدقة، وإذا وجد صنفاً جديداً سينبهك فوراً لإضافته.
+          </p>
+
+          <div class="parser-studio-grid">
+            <div>
+              <label style="font-weight: 700; margin-bottom: 0.5rem; display: block;">نص الطلبية الخام:</label>
+              <textarea id="parser-textarea" class="parser-textarea" placeholder="الصق هنا الطلبيات مع الأعداد، مثال:
+West
+بنانا بودينج 12
+ملفيه سكر 3
+حاجه التجمع
+2 شوكلت كوكيز
+..."></textarea>
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 1rem;">
+                <button class="btn btn-primary" id="btn-parse-text">
+                  <span>⚡ تحليل واحتساب فوري</span>
+                </button>
+                <button class="btn btn-outline-gold" id="btn-add-parsed-order">
+                  <span>➕ اعتماد وإضافة للطلبيات</span>
+                </button>
+              </div>
+            </div>
+
+            <div>
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+                <label style="font-weight: 700;">نتائج التحليل والمطابقة المباشرة:</label>
+                <span class="badge badge-gold" id="parsed-items-count">0</span>
+              </div>
+              <div class="parser-preview-box" id="parser-results-preview">
+                <p style="color: var(--text-muted); text-align: center; padding: 3rem 1rem;">
+                  أدخل أو الصق نص الطلبية واضغط على "تحليل واحتساب فوري" لمشاهدة النتائج التلقائية هنا...
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ==================== VIEW 4: CATALOG & PRICE SHEET ==================== -->
+      <section class="view-panel" id="view-catalog">
+        <div class="panel-card">
+          <div class="panel-header">
+            <div>
+              <div class="panel-title">
+                <span>🏷️ شيت الأسعار والأصناف الرسمي (Móka Bakery Master Catalog)</span>
+              </div>
+              <p style="font-size: 0.85rem; color: var(--text-secondary); margin-top: 0.35rem;">
+                قائمة الأسعار مستخرجة ومطابقة بنسبة 100% لفواتير شركة Móka Bakery الرسمية الصادرة لـ Daily Dose.
+              </p>
+            </div>
+
+            <div style="display: flex; gap: 0.75rem; flex-wrap: wrap;">
+              <div class="search-input-wrapper" style="min-width: 200px;">
+                <span class="search-icon">🔍</span>
+                <input type="text" id="catalog-search-input" placeholder="بحث في شيت الأسعار...">
+              </div>
+              <button class="btn btn-primary" onclick="openAddCatalogItem()">
+                <span>➕ إضافة صنف جديد للشيت</span>
+              </button>
+              <button class="btn btn-secondary" onclick="exportCatalogToExcel()">
+                <span>📥 تحميل شيت الأسعار إكسيل</span>
+              </button>
+            </div>
+          </div>
+
+          <div class="table-responsive">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>كود الصنف</th>
+                  <th>الاسم بالعربي</th>
+                  <th>الاسم بالإنجليزي</th>
+                  <th>التصنيف</th>
+                  <th>السعر الصافي (ج.م)</th>
+                  <th>نوع الضريبة</th>
+                  <th>السعر شامل الضريبة</th>
+                  <th>إجراءات</th>
+                </tr>
+              </thead>
+              <tbody id="catalog-table-body">
+                <!-- Dynamically populated -->
+              </tbody>
+            </table>
+          </div>
+          <div id="catalog-pagination-container"></div>
+        </div>
+      </section>
+
+      <!-- ==================== VIEW 5: OFFICIAL PRINTABLE INVOICE ==================== -->
+      <section class="view-panel" id="view-invoice">
+        <div class="panel-card no-print" style="margin-bottom: 1.5rem;">
+          <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
+            <div>
+              <h3 style="font-weight: 700; color: var(--accent-gold);">معاينة الفاتورة الضريبية الرسمية</h3>
+              <p style="font-size: 0.85rem; color: var(--text-secondary);">
+                هذه المعاينة مطابقة تماماً لتصميم فواتير Móka Bakery الرسمية وجاهزة للطباعة فوراً أو الحفظ كـ PDF.
+              </p>
+            </div>
+            <button class="btn btn-primary" id="btn-print-invoice">
+              <span>🖨️ طباعة الفاتورة أو حفظها كـ PDF</span>
+            </button>
+          </div>
+        </div>
+
+        <div id="invoice-printable-content">
+          <!-- Dynamically populated -->
+        </div>
+      </section>
+
+      <!-- ==================== VIEW 6: ARCHITECTURE & FULL-STACK ==================== -->
+      <section class="view-panel" id="view-architecture">
+        <div class="panel-card">
+          <div class="panel-header">
+            <div class="panel-title">
+              <span>🚀 معمارية النظام وقابلية التوسع للمستقبل (Full-Stack Architecture)</span>
+            </div>
+            <span class="badge" style="background: var(--color-emerald-bg); color: var(--color-emerald);">Enterprise
+              Ready</span>
+          </div>
+
+          <div style="font-size: 0.95rem; line-height: 1.8; color: var(--text-secondary);">
+            <p style="margin-bottom: 1rem;">
+              أهلاً بك يا عمر! بخصوص سؤالك عن هل تبني المشروع بـ <strong>Angular + Node.js + MongoDB</strong> أو يكفي
+              <strong>HTML + CSS + JS</strong>:
+            </p>
+
+            <div
+              style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 1.5rem; margin: 1.5rem 0;">
+              <div
+                style="background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: 1.5rem;">
+                <h4 style="color: var(--accent-gold); margin-bottom: 0.75rem; font-size: 1.1rem;">⚡ الوضع الحالي
+                  (Client-Side Pro)</h4>
+                <ul style="padding-right: 1.25rem; font-size: 0.88rem; line-height: 1.7;">
+                  <li><strong>فوري وبدون أي إعدادات معقدة:</strong> يفتح في أي متصفح بضغطة زر.</li>
+                  <li><strong>سرعة فائقة Zero Latency:</strong> الحسابات والتحليل الذكي للنصوص تتم محلياً في أجزاء من
+                    الألف من الثانية.</li>
+                  <li><strong>حفظ تلقائي Offline:</strong> البيانات محفوظة في <code>LocalStorage</code> ولا تضيع مع
+                    التحديث.</li>
+                  <li><strong>تصدير Excel و PDF:</strong> مدمج وجاهز تماماً.</li>
+                </ul>
+              </div>
+
+              <div
+                style="background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: 1.5rem;">
+                <h4 style="color: var(--color-emerald); margin-bottom: 0.75rem; font-size: 1.1rem;">🏢 قابلية التوسع لـ
+                  Node + MongoDB</h4>
+                <ul style="padding-right: 1.25rem; font-size: 0.88rem; line-height: 1.7;">
+                  <li>لقد قمنا بالفعل بتجهيز مجلد <code>server/</code> داخل المشروع بالكامل!</li>
+                  <li>يحتوي على سيرفر <strong>Express REST API</strong> مع <strong>Mongoose Models</strong> للأصناف
+                    والطلبيات.</li>
+                  <li>يحتوي على سكربت <code>seed.js</code> يقوم بزرع كل أصناف وطلبيات موكا في MongoDB بضغطة واحدة.</li>
+                  <li>إذا كبر المشروع وأردت عمل نظام متعدد المستخدمين (Multi-Tenant SaaS) فكل شيء جاهز للربط فوراً!</li>
+                </ul>
+              </div>
+            </div>
+
+            <div
+              style="background: var(--bg-primary); border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: 1.25rem; font-family: monospace; direction: ltr; text-align: left; margin-top: 1rem;">
+              <span style="color: #64748b;"># تشغيل السيرفر الاختياري (Node.js API + MongoDB):</span><br>
+              cd server<br>
+              npm install<br>
+              npm start
+            </div>
+          </div>
+        </div>
+      </section>
+
+    </main>
+  </div>
+
+  <!-- Modal: Add New Catalog Item -->
+  <div class="modal-overlay" id="modal-add-item">
+    <div class="modal-content">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+        <h3 id="catalog-form-title" style="font-weight: 700; color: var(--accent-gold);">➕ إضافة صنف جديد لشيت الأسعار
+        </h3>
+        <button class="btn-icon" onclick="closeModal('modal-add-item')" style="border: none;">✕</button>
+      </div>
+
+      <form id="form-add-catalog-item">
+        <div class="form-group">
+          <label>كود الصنف (Item Code):</label>
+          <input type="text" id="item-code" class="form-control"
+            placeholder="مثال: 302199 أو اتركه فارغاً لتوليد كود تلقائي">
+        </div>
+
+        <div class="form-group">
+          <label>اسم الصنف بالعربي *:</label>
+          <input type="text" id="item-name-ar" class="form-control" placeholder="مثال: كوكيز كيت كات" required>
+        </div>
+
+        <div class="form-group">
+          <label>اسم الصنف بالإنجليزي (اختياري):</label>
+          <input type="text" id="item-name-en" class="form-control" placeholder="مثال: KitKat Cookies">
+        </div>
+
+        <div class="form-group">
+          <label>التصنيف *:</label>
+          <select id="item-category" class="form-control" required>
+            <option value="حلويات وكيك">حلويات وكيك</option>
+            <option value="كوكيز ومافن">كوكيز ومافن</option>
+            <option value="مخبوزات وكرواسون">مخبوزات وكرواسون</option>
+            <option value="ساندوتشات وراب">ساندوتشات وراب</option>
+            <option value="سلطات وباستا">سلطات وباستا</option>
+          </select>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+          <div class="form-group">
+            <label>سعر القطعة الصافي (ج.م) *:</label>
+            <input type="number" step="0.5" id="item-price" class="form-control" placeholder="65.00" required>
+          </div>
+
+          <div class="form-group">
+            <label>نوع ونسبة الضريبة *:</label>
+            <select id="item-tax-type" class="form-control">
+              <option value="SCHD_5">ضريبة جدول 5%</option>
+              <option value="VAT_14">ضريبة قيمة مضافة 14%</option>
+              <option value="NONE">معفي من الضريبة 0%</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label>الأسماء الشائعة / المرادفات (مفصولة بفاصلة):</label>
+          <input type="text" id="item-aliases" class="form-control" placeholder="مثال: كيت كات كوكيز, كوكيز كيتكات">
+        </div>
+
+        <div style="display: flex; justify-content: flex-end; gap: 0.75rem; margin-top: 1.5rem;">
+          <button type="button" class="btn btn-secondary" onclick="closeModal('modal-add-item')">إلغاء</button>
+          <button type="submit" class="btn btn-primary" id="catalog-form-submit">حفظ في شيت الأسعار</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal: Add New Branch / Order -->
+  <div class="modal-overlay" id="modal-new-branch" role="dialog" aria-modal="true">
+    <div class="modal-content">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem;">
+        <h3 style="font-weight: 700; color: var(--accent-gold); display: flex; align-items: center; gap: 0.5rem; font-size: 1.1rem;">
+          <span>🏢</span>
+          <span>إضافة فرع أو طلبية جديدة</span>
+        </h3>
+        <button class="btn-icon" onclick="closeModal('modal-new-branch')" style="border: none;" aria-label="إغلاق">✕</button>
+      </div>
+
+      <form id="form-new-branch">
+        <div class="form-group">
+          <label for="new-branch-name-input">اسم الفرع أو عنوان الطلبية *:</label>
+          <input type="text" id="new-branch-name-input" class="form-control"
+            placeholder="مثال: فرع الزمالك، فرع المعادي، طلبية خاصة..." required autocomplete="off">
+        </div>
+
+        <div style="margin-bottom: 1.25rem;">
+          <label style="font-size: 0.8rem; color: var(--text-muted); display: block; margin-bottom: 0.45rem;">
+            أو اختر من المقترحات السريعة:
+          </label>
+          <div class="branch-suggestions-grid" style="display: flex; gap: 0.4rem; flex-wrap: wrap;">
+            <button type="button" class="branch-suggestion-tag" data-name="فرع الزمالك">📍 فرع الزمالك</button>
+            <button type="button" class="branch-suggestion-tag" data-name="فرع المعادي">📍 فرع المعادي</button>
+            <button type="button" class="branch-suggestion-tag" data-name="فرع التجمع">📍 فرع التجمع</button>
+            <button type="button" class="branch-suggestion-tag" data-name="فرع الشيخ زايد">📍 الشيخ زايد</button>
+            <button type="button" class="branch-suggestion-tag" data-name="طلبية خارجية خاصة">📦 طلبية خاصة</button>
+          </div>
+        </div>
+
+        <div class="modal-actions" style="display: flex; justify-content: flex-end; gap: 0.75rem; margin-top: 1.5rem;">
+          <button type="button" class="btn btn-secondary" onclick="closeModal('modal-new-branch')">إلغاء</button>
+          <button type="submit" class="btn btn-primary" id="btn-submit-new-branch">➕ إنشاء الفرع</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal: Custom Confirmation Dialog (Replaces native confirm()) -->
+  <div class="modal-overlay" id="modal-confirm" role="dialog" aria-modal="true">
+    <div class="modal-content modal-confirm-content" style="max-width: 440px; text-align: center;">
+      <div id="modal-confirm-icon" style="font-size: 2.8rem; margin-bottom: 0.75rem; line-height: 1;">⚠️</div>
+      <h3 id="modal-confirm-title" style="font-weight: 700; color: var(--text-primary); margin-bottom: 0.6rem; font-size: 1.15rem;">
+        تأكيد الإجراء
+      </h3>
+      <p id="modal-confirm-message" style="color: var(--text-secondary); font-size: 0.9rem; line-height: 1.6; margin-bottom: 1.5rem;">
+        هل أنت متأكد من تنفيذ هذا الإجراء؟
+      </p>
+      <div class="modal-actions" style="display: flex; justify-content: center; gap: 0.75rem;">
+        <button type="button" class="btn btn-secondary" id="modal-confirm-cancel" style="min-width: 100px;">
+          إلغاء
+        </button>
+        <button type="button" class="btn btn-primary" id="modal-confirm-submit" style="min-width: 120px;">
+          تأكيد
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: API Settings for Vercel / Remote Backend -->
+  <div class="modal-overlay" id="modal-api-settings" role="dialog" aria-modal="true">
+    <div class="modal-content" style="max-width: 480px;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem;">
+        <h3 style="font-weight: 700; color: var(--accent-gold); display: flex; align-items: center; gap: 0.5rem; font-size: 1.15rem;">
+          <span>⚙️</span>
+          <span>إعدادات رابط الخادم (Backend API)</span>
+        </h3>
+        <button class="btn-icon" onclick="closeModal('modal-api-settings')" style="border: none;" aria-label="إغلاق">✕</button>
+      </div>
+
+      <p style="font-size: 0.86rem; color: var(--text-secondary); line-height: 1.6; margin-bottom: 1.25rem;">
+        إذا قمت برفع الباك إند (Backend) على <strong>Vercel</strong> منفصلاً عن الفرونت إند، يمكنك وضع رابط الـ API هنا لحفظه والربط به مباشرة.
+      </p>
+
+      <form id="form-api-settings">
+        <div class="form-group">
+          <label for="api-url-input">رابط الـ API الأساسي (Base URL):</label>
+          <input type="text" id="api-url-input" class="form-control" placeholder="مثال: https://my-backend.vercel.app/api أو /api" style="direction: ltr; text-align: left; font-family: monospace;">
+        </div>
+
+        <div style="display: flex; gap: 0.5rem; margin-bottom: 1.25rem; flex-wrap: wrap;">
+          <button type="button" class="btn btn-secondary" id="btn-api-default" style="padding: 0.35rem 0.75rem; font-size: 0.8rem;">
+            الافتراضي (/api)
+          </button>
+          <button type="button" class="btn btn-secondary" id="btn-api-localhost" style="padding: 0.35rem 0.75rem; font-size: 0.8rem;">
+            المحلي (localhost:5000/api)
+          </button>
+        </div>
+
+        <div class="modal-actions" style="display: flex; justify-content: flex-end; gap: 0.75rem;">
+          <button type="button" class="btn btn-secondary" onclick="closeModal('modal-api-settings')">إلغاء</button>
+          <button type="submit" class="btn btn-primary" id="btn-save-api">💾 حفظ والاتصال</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Toast Notification Container -->
+  <div class="toast-container" id="toast-container"></div>
+
+  <!-- Application Modular Architecture: Utilities, Services, Store, Components & App Bootstrap -->
+  <script src="js/utils/formatters.js"></script>
+  <script src="js/services/api.js"></script>
+  <script src="js/core/export.js"></script>
+  <script src="js/store/state.js"></script>
+  <script src="js/components/toast.js"></script>
+  <script src="js/components/modal.js"></script>
+  <script src="js/components/pagination.js"></script>
+  <script src="js/components/header.js"></script>
+  <script src="js/components/branchSelector.js"></script>
+  <script src="js/components/kpiCards.js"></script>
+  <script src="js/components/itemsTable.js"></script>
+  <script src="js/components/categoriesBreakdown.js"></script>
+  <script src="js/components/smartParser.js"></script>
+  <script src="js/components/catalogManager.js"></script>
+  <script src="js/components/invoiceView.js"></script>
+  <script src="js/app.js"></script>
+</body>
+
+</html>

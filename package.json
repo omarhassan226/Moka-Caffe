@@ -1,0 +1,19 @@
+{
+  "name": "moka-caffe-billing-frontend",
+  "version": "2.0.0",
+  "private": true,
+  "description": "واجهة المستخدم لنظام Móka Billing ERP للمخابز والمطاعم",
+  "scripts": {
+    "start": "npx serve .",
+    "dev": "npx serve ."
+  },
+  "keywords": [
+    "moka",
+    "erp",
+    "frontend",
+    "billing",
+    "accounting"
+  ],
+  "author": "Omar",
+  "license": "ISC"
+}
