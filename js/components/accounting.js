@@ -29,8 +29,18 @@ class AccountingComponent {
     this.salesList = [];
     this.summary = null;
 
-    // Temporary storage for image being uploaded in modal
+    // Temporary storage for images being uploaded in modal
+    this.pendingImages = [];
     this.pendingImageData = "";
+    this.activePreviewIndex = 0;
+
+    // Full screen viewer gallery state
+    this.viewerImages = [];
+    this.viewerCurrentIndex = 0;
+    this.viewerTitle = "";
+
+    // Track active invoice being edited (null when creating new)
+    this.editingInvoiceId = null;
 
     // Bind event listeners
     this.initEventListeners();
@@ -242,7 +252,7 @@ class AccountingComponent {
       });
     }
 
-    // 4. AI Scan Invoice Button
+    // AI Scan Button
     const btnAiScan = document.getElementById("btn-ai-scan-invoice");
     if (btnAiScan) {
       btnAiScan.addEventListener("click", () => this.triggerAiInvoiceScan());
@@ -250,19 +260,39 @@ class AccountingComponent {
   }
 
   /**
-   * Direct Gemini Client-Side Scan Fallback
+   * Scan invoice with Gemini Direct (client-side fallback)
+   * Supports multi-image invoices (up to 10+ pages)
    */
-  static async scanWithGeminiDirect(imageData, apiKey, signal) {
-    let mimeType = "image/jpeg";
-    let base64Data = imageData;
-    const match = imageData.match(/^data:([^;]+);base64,(.+)$/);
-    if (match) {
-      mimeType = match[1];
-      base64Data = match[2];
-    }
+  static async scanWithGeminiDirect(imagesInput, apiKey, signal) {
+        const imagesList = Array.isArray(imagesInput) && imagesInput.length > 0
+          ? imagesInput
+          : (imagesInput ? [imagesInput] : []);
 
-    const systemPrompt = `أنت خبير محاسبي متخصص في قراءة وتحليل فواتير وإيصالات الكافيهات والمطاعم في مصر.
-حلل صورة هذه الفاتورة بدقة، واستخرج البيانات التالية بصيغة JSON حصراً بدون أي نصوص إضافية:
+        if(imagesList.length === 0) {
+        throw new Error("لم يتم إرفاق أي صورة للفاتورة");
+      }
+
+      const imageParts = imagesList.map((imgStr) => {
+        let mimeType = "image/jpeg";
+        let base64Data = imgStr;
+        const match = imgStr.match(/^data:([^;]+);base64,(.+)$/);
+        if (match) {
+          mimeType = match[1];
+          base64Data = match[2];
+        }
+        return { inlineData: { mimeType, data: base64Data } };
+      });
+
+      const pageCount = imagesList.length;
+      const multiPageInstruction = pageCount > 1
+        ? `\nتنبيه هام جداً: هذه الفاتورة تتكون من (${pageCount}) صفحات مرفقة بالترتيب كصور متعددة لفاتورة واحدة.
+1. راجع جميع الصفحات بالكامل من أول صفحة حتى آخر صفحة.
+2. اجمع قائمة الأصناف من كافة الصفحات.
+3. احتسب المبلغ الإجمالي النهائي (Total / Grand Total / الصافي الشامل) لكافة الصفحات معاً بدقة حسابية تامة.`
+        : "";
+
+      const systemPrompt = `أنت خبير محاسبي متخصص في قراءة وتحليل فواتير وإيصالات الكافيهات والمطاعم في مصر.
+حلل صور هذه الفاتورة بدقة، واستخرج البيانات التالية بصيغة JSON حصراً بدون أي نصوص إضافية:${multiPageInstruction}
 {
   "supplier": "اسم المورد أو المحل أو الشركة",
   "amount": 0.00,
@@ -270,65 +300,65 @@ class AccountingComponent {
   "invoiceNumber": "",
   "category": "خامات وبن",
   "items": [{ "name": "اسم الصنف", "quantity": 1, "price": 0, "total": 0 }],
-  "notes": "ملخص الفاتورة"
+  "notes": "ملخص الفاتورة (${pageCount} صفحات)"
 }
 اختر category من: ["خامات وبن", "ألبان وسيرب", "حلويات ومخبوزات", "تعبئة وتغليف", "نظافة ومستهلكات", "صيانة وتشغيل", "أخرى"]
-تأكد من أن amount هو الإجمالي الصافي النهائي كقيمة رقمية Number فقط.`;
+تأكد من أن amount هو الإجمالي الصافي النهائي الشامل لكافة صفحات الفاتورة كقيمة رقمية Number فقط.`;
 
-    const requestPayload = {
-      contents: [{
-        parts: [
-          { text: systemPrompt },
-          { inlineData: { mimeType, data: base64Data } }
-        ]
-      }],
-      generationConfig: {
-        temperature: 0.1,
-        responseMimeType: "application/json"
-      }
-    };
-
-    const models = [
-      "gemini-3.5-flash",
-      "gemini-3.5-flash-lite",
-      "gemini-3.6-flash",
-      "gemini-3.7-flash",
-      "gemini-3.8-flash",
-      "gemini-3.1-flash-lite",
-      "gemini-flash-lite-latest"
-    ];
-    let lastErr = null;
-
-    for (const model of models) {
-      try {
-        const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          signal,
-          body: JSON.stringify(requestPayload)
-        });
-
-        if (!res.ok) {
-          const t = await res.text();
-          throw new Error(`[${res.status}] ${t}`);
+      const requestPayload = {
+        contents: [{
+          parts: [
+            { text: systemPrompt },
+            ...imageParts
+          ]
+        }],
+        generationConfig: {
+          temperature: 0.1,
+          responseMimeType: "application/json"
         }
+      };
 
-        const json = await res.json();
-        const candidate = json.candidates?.[0]?.content?.parts?.[0]?.text;
-        if (!candidate) throw new Error("لا توجد استجابة من نموذج الذكاء الاصطناعي");
+      const models = [
+        "gemini-3.5-flash",
+        "gemini-3.5-flash-lite",
+        "gemini-3.6-flash",
+        "gemini-3.7-flash",
+        "gemini-3.8-flash",
+        "gemini-3.1-flash-lite",
+        "gemini-flash-lite-latest"
+      ];
+      let lastErr = null;
 
-        let cleanJson = candidate.trim().replace(/^```json\s*/, "").replace(/\s*```$/, "");
-        const parsed = JSON.parse(cleanJson);
-        return { success: true, data: parsed };
-      } catch (err) {
-        if (err.name === "AbortError") throw err;
-        lastErr = err;
-        console.warn(`Direct model ${model} attempt failed:`, err.message);
+      for (const model of models) {
+        try {
+          const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            signal,
+            body: JSON.stringify(requestPayload)
+          });
+
+          if (!res.ok) {
+            const t = await res.text();
+            throw new Error(`[${res.status}] ${t}`);
+          }
+
+          const json = await res.json();
+          const candidate = json.candidates?.[0]?.content?.parts?.[0]?.text;
+          if (!candidate) throw new Error("لا توجد استجابة من نموذج الذكاء الاصطناعي");
+
+          let cleanJson = candidate.trim().replace(/^\`\`\`json\s*/, "").replace(/\s*\`\`\`$/, "");
+          const parsed = JSON.parse(cleanJson);
+          return { success: true, data: parsed };
+        } catch (err) {
+          if (err.name === "AbortError") throw err;
+          lastErr = err;
+          console.warn(`Direct model ${model} attempt failed:`, err.message);
+        }
       }
-    }
 
-    throw lastErr || new Error("تعذر فحص الفاتورة عبر نماذج الذكاء الاصطناعي");
-  }
+      throw lastErr || new Error("تعذر فحص الفاتورة عبر نماذج الذكاء الاصطناعي");
+    }
 
   /**
    * Cancel ongoing AI scan
@@ -337,7 +367,7 @@ class AccountingComponent {
     if (this.activeScanAbortController) {
       try {
         this.activeScanAbortController.abort();
-      } catch (_) {}
+      } catch (_) { }
       this.activeScanAbortController = null;
     }
 
@@ -349,7 +379,7 @@ class AccountingComponent {
 
     if (scanningOverlay) scanningOverlay.style.display = "none";
     if (btn) btn.disabled = false;
-    if (btnText) btnText.textContent = "✨ استخراج بيانات الفاتورة بالذكاء الاصطناعي (AI OCR)";
+    this.updateScanButtonText();
     if (btnCancel) btnCancel.style.display = "none";
     if (statusMsg) {
       statusMsg.style.display = "block";
@@ -359,13 +389,15 @@ class AccountingComponent {
   }
 
   /**
-   * Scan invoice photo using AI Vision
+   * Scan invoice photo(s) using AI Vision (Supports multi-page invoices up to 10+ pages)
    */
   static async triggerAiInvoiceScan() {
-    if (!this.pendingImageData) {
+    if (!this.pendingImages || this.pendingImages.length === 0) {
       window.ToastComponent.show("يرجى اختيار أو رفع صورة الفاتورة أولاً", "error");
       return;
     }
+
+    const pageCount = this.pendingImages.length;
 
     // Cancel any previous scan
     if (this.activeScanAbortController) {
@@ -378,16 +410,26 @@ class AccountingComponent {
     const btnText = document.getElementById("btn-ai-scan-text");
     const btnCancel = document.getElementById("btn-cancel-ai-scan");
     const scanningOverlay = document.getElementById("ai-scanning-overlay");
+    const scanBadgeText = document.getElementById("ai-scan-badge-text");
     const statusMsg = document.getElementById("ai-scan-status-message");
 
     if (btn) btn.disabled = true;
-    if (btnText) btnText.textContent = "⏳ جاري قراءة الفاتورة بالذكاء الاصطناعي...";
+    if (btnText) btnText.textContent = pageCount > 1
+      ? `⏳ جاري قراءة (${pageCount}) صفحات بالـ AI...`
+      : "⏳ جاري قراءة الفاتورة بالذكاء الاصطناعي...";
     if (btnCancel) btnCancel.style.display = "inline-flex";
     if (scanningOverlay) scanningOverlay.style.display = "flex";
+    if (scanBadgeText) {
+      scanBadgeText.textContent = pageCount > 1
+        ? `⚡ جاري تحليل (${pageCount}) صفحات للفاتورة وحساب الإجمالي...`
+        : "⚡ جاري تحليل الفاتورة واستخراج البيانات...";
+    }
     if (statusMsg) {
       statusMsg.style.display = "block";
       statusMsg.style.color = "var(--accent-gold)";
-      statusMsg.textContent = "🔍 جاري فحص النصوص، التواريخ، الأصناف، والمبلغ الإجمالي...";
+      statusMsg.textContent = pageCount > 1
+        ? `🔍 جاري فحص كافة الصفحات (${pageCount})، تجميع الأصناف، واحتساب الإجمالي الشامل...`
+        : "🔍 جاري فحص النصوص، التواريخ، الأصناف، والمبلغ الإجمالي...";
     }
 
     try {
@@ -396,12 +438,12 @@ class AccountingComponent {
 
       // 1. Try server backend endpoint first
       try {
-        res = await this.api.scanInvoice(this.pendingImageData, apiKey, signal);
+        res = await this.api.scanInvoice(this.pendingImages, apiKey, signal);
       } catch (serverErr) {
         if (serverErr.name === "AbortError") throw serverErr;
         console.warn("Backend OCR request failed, trying direct Gemini API fallback:", serverErr.message);
         if (apiKey) {
-          res = await this.scanWithGeminiDirect(this.pendingImageData, apiKey, signal);
+          res = await this.scanWithGeminiDirect(this.pendingImages, apiKey, signal);
         } else {
           throw serverErr;
         }
@@ -434,6 +476,9 @@ class AccountingComponent {
         }
 
         let summaryNotes = d.notes || "";
+        if (pageCount > 1 && !summaryNotes.includes("صفحات")) {
+          summaryNotes = `[فاتورة مجمعة من ${pageCount} صفحات] ${summaryNotes}`;
+        }
         if (d.items && d.items.length > 0) {
           const itemsStr = d.items.map(it => `${it.name} (${it.quantity})`).join("، ");
           summaryNotes = summaryNotes ? `${summaryNotes} | الأصناف: ${itemsStr}` : `الأصناف: ${itemsStr}`;
@@ -442,10 +487,11 @@ class AccountingComponent {
 
         if (statusMsg) {
           statusMsg.style.color = "var(--color-emerald)";
-          statusMsg.innerHTML = `✅ تم استخراج البيانات بنجاح: مورد "<strong>${d.supplier}</strong>" بمبلغ <strong>${d.amount} ج.م</strong>.`;
+          const pageInfo = pageCount > 1 ? ` (${pageCount} صفحات)` : "";
+          statusMsg.innerHTML = `✅ تم استخراج وحساب الفاتورة${pageInfo} بنجاح: مورد "<strong>${d.supplier}</strong>" بإجمالي شامل <strong>${d.amount} ج.م</strong>.`;
         }
 
-        window.ToastComponent.show(`✨ تم استخراج بيانات الفاتورة بنجاح: ${d.amount} ج.م`, "success");
+        window.ToastComponent.show(`✨ تم استخراج وحساب الفاتورة بنجاح: ${d.amount} ج.م`, "success");
       }
     } catch (err) {
       if (err.name === "AbortError") {
@@ -463,85 +509,243 @@ class AccountingComponent {
     } finally {
       this.activeScanAbortController = null;
       if (btn) btn.disabled = false;
-      if (btnText) btnText.textContent = "✨ استخراج بيانات الفاتورة بالذكاء الاصطناعي (AI OCR)";
+      this.updateScanButtonText();
       if (btnCancel) btnCancel.style.display = "none";
       if (scanningOverlay) scanningOverlay.style.display = "none";
     }
   }
 
   /**
-   * Handle image file reading and client-side compression
+   * Helper to compress single image file
    */
-  static handleImageFile(file) {
-    if (!file.type.startsWith("image/")) {
-      window.ToastComponent.show("يرجى اختيار ملف صورة صالح (JPG, PNG, WebP)", "error");
+  static compressImageFile(file) {
+    return new Promise((resolve, reject) => {
+      if (!file.type.startsWith("image/")) {
+        return reject(new Error("الملف ليس صورة"));
+      }
+
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const img = new Image();
+        img.onload = () => {
+          const canvas = document.createElement("canvas");
+          let width = img.width;
+          let height = img.height;
+          const maxDim = 1200;
+
+          if (width > maxDim || height > maxDim) {
+            if (width > height) {
+              height = Math.round((height * maxDim) / width);
+              width = maxDim;
+            } else {
+              width = Math.round((width * maxDim) / height);
+              height = maxDim;
+            }
+          }
+
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext("2d");
+          ctx.drawImage(img, 0, 0, width, height);
+
+          const dataUrl = canvas.toDataURL("image/jpeg", 0.85);
+          resolve(dataUrl);
+        };
+        img.onerror = () => reject(new Error("فشل قراءة بيانات الصورة"));
+        img.src = e.target.result;
+      };
+      reader.onerror = () => reject(new Error("فشل تحميل الملف"));
+      reader.readAsDataURL(file);
+    });
+  }
+
+  /**
+   * Handle multiple image files upload (up to 10+ pages)
+   */
+  static async handleImageFiles(filesInput) {
+    const files = Array.from(filesInput).filter(f => f.type.startsWith("image/"));
+    if (files.length === 0) {
+      window.ToastComponent.show("يرجى اختيار ملفات صور صالحة (JPG, PNG, WebP)", "error");
       return;
     }
 
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const img = new Image();
-      img.onload = () => {
-        // Compress image if larger than 1200px to maintain fast performance and low storage
-        const canvas = document.createElement("canvas");
-        let width = img.width;
-        let height = img.height;
-        const maxDim = 1200;
+    const maxAllowed = 15;
+    if (this.pendingImages.length + files.length > maxAllowed) {
+      window.ToastComponent.show(`الحد الأقصى لصفحات الفاتورة الواحدة هو ${maxAllowed} صفحة`, "warning");
+    }
 
-        if (width > maxDim || height > maxDim) {
-          if (width > height) {
-            height = Math.round((height * maxDim) / width);
-            width = maxDim;
-          } else {
-            width = Math.round((width * maxDim) / height);
-            height = maxDim;
-          }
-        }
+    const availableSlots = Math.max(0, maxAllowed - this.pendingImages.length);
+    const filesToProcess = files.slice(0, availableSlots);
 
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext("2d");
-        ctx.drawImage(img, 0, 0, width, height);
+    const prevCount = this.pendingImages.length;
+    for (const f of filesToProcess) {
+      try {
+        const compressed = await this.compressImageFile(f);
+        this.pendingImages.push(compressed);
+      } catch (err) {
+        console.warn("Failed to process invoice image page:", err.message);
+      }
+    }
 
-        const dataUrl = canvas.toDataURL("image/jpeg", 0.85);
-        this.pendingImageData = dataUrl;
+    if (this.pendingImages.length > prevCount) {
+      this.pendingImageData = this.pendingImages[0] || "";
+      this.activePreviewIndex = this.pendingImages.length - 1;
+      this.renderInvoicePagesPreview();
 
-        const previewContainer = document.getElementById("invoice-preview-container");
-        const previewImage = document.getElementById("invoice-preview-image");
-        const dropZone = document.getElementById("invoice-drop-zone");
+      const addedCount = this.pendingImages.length - prevCount;
+      if (this.pendingImages.length > 1) {
+        window.ToastComponent.show(`تمت إضافة (${addedCount}) صفحات. إجمالي صفحات الفاتورة الآن: ${this.pendingImages.length}`, "info");
+      }
+    }
 
-        if (previewImage) previewImage.src = dataUrl;
-        if (previewContainer) previewContainer.style.display = "block";
-        if (dropZone) dropZone.style.display = "none";
-
-        // Show AI scan action bar
-        const aiBar = document.getElementById("ai-scan-actions-bar");
-        if (aiBar) aiBar.style.display = "block";
-        const statusMsg = document.getElementById("ai-scan-status-message");
-        if (statusMsg) statusMsg.style.display = "none";
-      };
-      img.src = e.target.result;
-    };
-    reader.readAsDataURL(file);
+    // Reset file input so user can choose more if needed
+    const fileInput = document.getElementById("invoice-image-file");
+    if (fileInput) fileInput.value = "";
   }
 
+  /**
+   * Backward-compatible single file handler
+   */
+  static handleImageFile(file) {
+    this.handleImageFiles([file]);
+  }
+
+  /**
+   * Render Multi-Page Preview Strip & Main Preview Image
+   */
+  static renderInvoicePagesPreview() {
+    const previewContainer = document.getElementById("invoice-preview-container");
+    const previewImage = document.getElementById("invoice-preview-image");
+    const dropZone = document.getElementById("invoice-drop-zone");
+    const pagesStrip = document.getElementById("invoice-pages-strip");
+    const summaryBar = document.getElementById("invoice-pages-summary-bar");
+    const summaryText = document.getElementById("invoice-pages-summary-text");
+    const pageBadge = document.getElementById("invoice-current-page-badge");
+    const countBadge = document.getElementById("invoice-pages-count-badge");
+    const aiBar = document.getElementById("ai-scan-actions-bar");
+
+    const totalPages = this.pendingImages.length;
+
+    if (totalPages === 0) {
+      if (previewContainer) previewContainer.style.display = "none";
+      if (dropZone) dropZone.style.display = "flex";
+      if (pagesStrip) pagesStrip.style.display = "none";
+      if (summaryBar) summaryBar.style.display = "none";
+      if (countBadge) countBadge.style.display = "none";
+      if (aiBar) aiBar.style.display = "none";
+      if (previewImage) previewImage.src = "";
+      return;
+    }
+
+    if (this.activePreviewIndex >= totalPages) {
+      this.activePreviewIndex = totalPages - 1;
+    }
+    if (this.activePreviewIndex < 0) {
+      this.activePreviewIndex = 0;
+    }
+
+    if (dropZone) dropZone.style.display = "none";
+    if (previewContainer) previewContainer.style.display = "block";
+    if (previewImage) previewImage.src = this.pendingImages[this.activePreviewIndex];
+
+    if (pageBadge) {
+      pageBadge.textContent = totalPages > 1
+        ? `صفحة ${this.activePreviewIndex + 1} من ${totalPages}`
+        : "صفحة 1";
+    }
+
+    if (countBadge) {
+      countBadge.style.display = "inline-block";
+      countBadge.textContent = `${totalPages} ${totalPages === 1 ? 'صفحة' : 'صفحات'}`;
+    }
+
+    if (summaryBar) summaryBar.style.display = "flex";
+    if (summaryText) {
+      summaryText.innerHTML = totalPages > 1
+        ? `📄 تم إرفاق <strong>${totalPages} صفحات</strong> للفاتورة (معاينة صفحة ${this.activePreviewIndex + 1})`
+        : "📄 تم إرفاق صفحة واحدة للفاتورة";
+    }
+
+    if (aiBar) aiBar.style.display = "block";
+    this.updateScanButtonText();
+
+    // Render pages strip
+    if (pagesStrip) {
+      pagesStrip.style.display = "flex";
+      let stripHtml = this.pendingImages.map((imgUrl, idx) => `
+        <div class="invoice-page-chip ${idx === this.activePreviewIndex ? 'active' : ''}" onclick="window.AccountingComponent.selectPreviewPage(${idx})" title="عرض صفحة ${idx + 1}">
+          <img src="${imgUrl}" alt="صفحة ${idx + 1}" />
+          <span class="invoice-page-badge">ص ${idx + 1}</span>
+          <button type="button" class="btn-remove-page-chip" onclick="event.stopPropagation(); window.AccountingComponent.removePreviewPage(${idx})" title="حذف هذه الصفحة">✕</button>
+        </div>
+      `).join("");
+
+      stripHtml += `
+        <div class="invoice-page-add-chip" onclick="document.getElementById('invoice-image-file').click()" title="إضافة صفحة أخرى للفاتورة">
+          <span style="font-size: 1.25rem; line-height: 1;">➕</span>
+          <span>صفحة</span>
+        </div>
+      `;
+
+      pagesStrip.innerHTML = stripHtml;
+    }
+  }
+
+  static updateScanButtonText() {
+    const btnText = document.getElementById("btn-ai-scan-text");
+    if (!btnText) return;
+    const count = this.pendingImages.length;
+    if (count > 1) {
+      btnText.textContent = `✨ فحص واستخراج إجمالي الفاتورة (${count} صفحات بالـ AI)`;
+    } else {
+      btnText.textContent = "✨ استخراج بيانات الفاتورة بالذكاء الاصطناعي (AI OCR)";
+    }
+  }
+
+  /**
+   * Select a specific page to view in the main modal preview
+   */
+  static selectPreviewPage(idx) {
+    if (idx >= 0 && idx < this.pendingImages.length) {
+      this.activePreviewIndex = idx;
+      this.renderInvoicePagesPreview();
+    }
+  }
+
+  /**
+   * Remove a single page from multi-page invoice
+   */
+  static removePreviewPage(idx) {
+    if (idx >= 0 && idx < this.pendingImages.length) {
+      this.pendingImages.splice(idx, 1);
+      this.pendingImageData = this.pendingImages[0] || "";
+      if (this.pendingImages.length === 0) {
+        this.clearImagePreview();
+      } else {
+        if (this.activePreviewIndex >= this.pendingImages.length) {
+          this.activePreviewIndex = this.pendingImages.length - 1;
+        }
+        this.renderInvoicePagesPreview();
+      }
+    }
+  }
+
+  /**
+   * Clear all uploaded invoice images
+   */
   static clearImagePreview() {
     if (this.activeScanAbortController) {
       this.cancelAiScan();
     }
+    this.pendingImages = [];
     this.pendingImageData = "";
-    const previewContainer = document.getElementById("invoice-preview-container");
-    const previewImage = document.getElementById("invoice-preview-image");
-    const dropZone = document.getElementById("invoice-drop-zone");
-    const fileInput = document.getElementById("invoice-image-file");
+    this.activePreviewIndex = 0;
 
-    if (previewImage) previewImage.src = "";
-    if (previewContainer) previewContainer.style.display = "none";
-    if (dropZone) dropZone.style.display = "flex";
+    const fileInput = document.getElementById("invoice-image-file");
     if (fileInput) fileInput.value = "";
 
-    const aiBar = document.getElementById("ai-scan-actions-bar");
-    if (aiBar) aiBar.style.display = "none";
+    this.renderInvoicePagesPreview();
+
     const statusMsg = document.getElementById("ai-scan-status-message");
     if (statusMsg) statusMsg.style.display = "none";
     const scanningOverlay = document.getElementById("ai-scanning-overlay");
@@ -550,6 +754,12 @@ class AccountingComponent {
 
   // ================= Open Modal Helpers =================
   static openAddInvoiceModal() {
+    this.editingInvoiceId = null;
+    const titleText = document.getElementById("invoice-modal-title-text");
+    if (titleText) titleText.textContent = "رفع وحفظ فاتورة مشتريات جديدة";
+    const submitBtnText = document.getElementById("btn-submit-invoice-text");
+    if (submitBtnText) submitBtnText.textContent = "💾 حفظ الفاتورة";
+
     this.clearImagePreview();
     const form = document.getElementById("form-add-invoice");
     if (form) form.reset();
@@ -558,6 +768,50 @@ class AccountingComponent {
     if (dateInput) {
       dateInput.value = new Date().toISOString().split("T")[0];
     }
+    window.ModalComponent.open("modal-add-invoice");
+  }
+
+  /**
+   * Open invoice modal in Edit Mode with existing data pre-filled
+   */
+  static openEditInvoiceModal(id) {
+    const inv = this.invoices.find(item => (item._id || item.id) === id);
+    if (!inv) {
+      window.ToastComponent.show("لم يتم العثور على بيانات الفاتورة المراد تعديلها", "error");
+      return;
+    }
+
+    this.editingInvoiceId = id;
+
+    const titleText = document.getElementById("invoice-modal-title-text");
+    if (titleText) titleText.textContent = `✏️ تعديل فاتورة: ${inv.supplier || "فاتورة"}`;
+    const submitBtnText = document.getElementById("btn-submit-invoice-text");
+    if (submitBtnText) submitBtnText.textContent = "💾 حفظ التعديلات";
+
+    const supplierInput = document.getElementById("invoice-supplier-input");
+    const amountInput = document.getElementById("invoice-amount-input");
+    const numberInput = document.getElementById("invoice-number-input");
+    const categoryInput = document.getElementById("invoice-category-input");
+    const dateInput = document.getElementById("invoice-date-input");
+    const notesInput = document.getElementById("invoice-notes-input");
+
+    if (supplierInput) supplierInput.value = inv.supplier || "";
+    if (amountInput) amountInput.value = inv.amount !== undefined ? inv.amount : "";
+    if (numberInput) numberInput.value = inv.invoiceNumber || "";
+    if (categoryInput) categoryInput.value = inv.category || "خامات وبن";
+    if (dateInput) {
+      dateInput.value = inv.invoiceDate ? new Date(inv.invoiceDate).toISOString().split("T")[0] : "";
+    }
+    if (notesInput) notesInput.value = inv.notes || "";
+
+    // Load existing invoice images into the multi-page preview
+    this.pendingImages = (inv.images && inv.images.length > 0)
+      ? [...inv.images]
+      : (inv.imageData ? [inv.imageData] : []);
+    this.pendingImageData = this.pendingImages[0] || "";
+    this.activePreviewIndex = 0;
+    this.renderInvoicePagesPreview();
+
     window.ModalComponent.open("modal-add-invoice");
   }
 
@@ -1052,16 +1306,19 @@ class AccountingComponent {
     tbody.innerHTML = this.invoices.map((inv, idx) => {
       const id = inv._id || inv.id;
       const dateStr = inv.invoiceDate ? new Date(inv.invoiceDate).toLocaleDateString("ar-EG") : "-";
-      const hasImg = !!inv.imageData;
+      const hasImg = !!inv.imageData || (inv.images && inv.images.length > 0);
+      const pageCount = (inv.images && inv.images.length) || inv.pageCount || 1;
+      const displayImg = (inv.images && inv.images[0]) || inv.imageData;
 
       return `
         <tr>
           <td style="font-weight: 600; color: var(--text-muted); text-align: center;">${idx + 1}</td>
           <td>
             ${hasImg ? `
-              <div class="invoice-thumb-preview" onclick="window.AccountingComponent.viewInvoiceFullImage('${inv.imageData}', '${inv.supplier || "فاتورة"}')" title="اضغط لتكبير الصورة">
-                <img src="${inv.imageData}" alt="صورة الفاتورة" />
+              <div class="invoice-thumb-preview" onclick="window.AccountingComponent.viewInvoiceByData(${idx})" title="اضغط لتكبير وعرض صفحات الفاتورة">
+                <img src="${displayImg}" alt="صورة الفاتورة" />
                 <span class="thumb-zoom-icon">🔍</span>
+                ${pageCount > 1 ? `<span class="invoice-pages-pill">${pageCount} ص</span>` : ''}
               </div>
             ` : `
               <span class="no-image-badge" title="لا توجد صورة">بدون صورة</span>
@@ -1085,7 +1342,10 @@ class AccountingComponent {
           <td style="color: var(--text-muted); font-size: 0.82rem; max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
             ${inv.notes || "-"}
           </td>
-          <td style="text-align: center;">
+          <td style="text-align: center; white-space: nowrap;">
+            <button class="btn-icon" onclick="window.AccountingComponent.openEditInvoiceModal('${id}')" title="تعديل بيانات الفاتورة" style="border: none; color: var(--accent-gold); font-size: 1rem; margin-left: 0.35rem; background: transparent; cursor: pointer; padding: 0.35rem 0.5rem; border-radius: var(--radius-sm); transition: var(--transition);">
+              ✏️
+            </button>
             <button class="btn-icon-danger" onclick="window.AccountingComponent.deleteInvoice('${id}', '${inv.supplier}')" title="حذف الفاتورة">
               🗑️
             </button>

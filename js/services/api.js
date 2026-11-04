@@ -169,20 +169,30 @@ class ApiService {
     });
   }
 
-  scanInvoice(imageData, customApiKey, signal) {
+  scanInvoice(imageInput, customApiKey, signal) {
     const key = customApiKey || (typeof localStorage !== "undefined" ? localStorage.getItem("GEMINI_API_KEY") : "");
     const headers = {};
     if (key) {
       headers["x-gemini-api-key"] = key;
     }
+    const isArray = Array.isArray(imageInput);
+    const bodyData = {
+      apiKey: key,
+      imageData: isArray ? (imageInput[0] || "") : imageInput,
+      images: isArray ? imageInput : (imageInput ? [imageInput] : [])
+    };
     return this.request("/accounting/invoices/scan", {
       method: "POST",
       headers,
       signal,
-      body: JSON.stringify({
-        imageData,
-        apiKey: key
-      })
+      body: JSON.stringify(bodyData)
+    });
+  }
+
+  updateInvoice(id, data) {
+    return this.request(`/accounting/invoices/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(data)
     });
   }
 
