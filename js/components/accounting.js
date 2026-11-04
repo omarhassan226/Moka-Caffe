@@ -837,19 +837,109 @@ class AccountingComponent {
     window.ModalComponent.open("modal-add-sales");
   }
 
-  static viewInvoiceFullImage(imageUrl, title = "صورة الفاتورة") {
+  /**
+   * View invoice by index in this.invoices
+   */
+  static viewInvoiceByData(idx) {
+    const inv = this.invoices[idx];
+    if (!inv) return;
+    this.viewInvoiceFullImage(inv, inv.supplier || "فاتورة");
+  }
+
+  /**
+   * Full screen invoice image gallery viewer (Supports single & multi-page invoices)
+   */
+  static viewInvoiceFullImage(imagesInput, title = "صورة الفاتورة") {
+    let images = [];
+    if (Array.isArray(imagesInput)) {
+      images = imagesInput;
+    } else if (typeof imagesInput === "object" && imagesInput !== null) {
+      images = (imagesInput.images && imagesInput.images.length > 0)
+        ? imagesInput.images
+        : (imagesInput.imageData ? [imagesInput.imageData] : []);
+      title = imagesInput.supplier || title;
+    } else if (typeof imagesInput === "string" && imagesInput) {
+      images = [imagesInput];
+    }
+
+    if (images.length === 0) {
+      window.ToastComponent.show("لا توجد صورة مسجلة لهذه الفاتورة", "info");
+      return;
+    }
+
+    this.viewerImages = images;
+    this.viewerCurrentIndex = 0;
+    this.viewerTitle = title;
+
+    this.renderViewerModal();
+    window.ModalComponent.open("modal-full-invoice-image");
+  }
+
+  static renderViewerModal() {
     const modalImage = document.getElementById("full-invoice-modal-image");
     const modalTitle = document.getElementById("full-invoice-modal-title");
     const downloadBtn = document.getElementById("btn-download-full-invoice");
+    const galleryNav = document.getElementById("full-invoice-gallery-nav");
+    const galleryCounter = document.getElementById("full-invoice-gallery-counter");
+    const btnPrev = document.getElementById("btn-gallery-prev");
+    const btnNext = document.getElementById("btn-gallery-next");
+    const thumbnailsStrip = document.getElementById("full-invoice-thumbnails-strip");
 
-    if (modalImage) modalImage.src = imageUrl;
-    if (modalTitle) modalTitle.textContent = title;
-    if (downloadBtn) {
-      downloadBtn.href = imageUrl;
-      downloadBtn.download = `فاتورة-${title}.jpg`;
+    const total = this.viewerImages.length;
+    const currentImg = this.viewerImages[this.viewerCurrentIndex] || "";
+
+    if (modalImage) modalImage.src = currentImg;
+    if (modalTitle) {
+      modalTitle.textContent = total > 1
+        ? `${this.viewerTitle} (صفحة ${this.viewerCurrentIndex + 1} من ${total})`
+        : this.viewerTitle;
     }
 
-    window.ModalComponent.open("modal-full-invoice-image");
+    if (downloadBtn) {
+      downloadBtn.href = currentImg;
+      downloadBtn.download = `فاتورة-${this.viewerTitle}-صفحة-${this.viewerCurrentIndex + 1}.jpg`;
+    }
+
+    if (total > 1) {
+      if (galleryNav) galleryNav.style.display = "flex";
+      if (galleryCounter) galleryCounter.textContent = `صفحة ${this.viewerCurrentIndex + 1} من ${total}`;
+      if (btnPrev) btnPrev.disabled = this.viewerCurrentIndex === 0;
+      if (btnNext) btnNext.disabled = this.viewerCurrentIndex === total - 1;
+
+      if (thumbnailsStrip) {
+        thumbnailsStrip.style.display = "flex";
+        thumbnailsStrip.innerHTML = this.viewerImages.map((img, idx) => `
+          <div class="invoice-page-chip ${idx === this.viewerCurrentIndex ? 'active' : ''}" onclick="window.AccountingComponent.selectViewerPage(${idx})" title="صفحة ${idx + 1}">
+            <img src="${img}" alt="صفحة ${idx + 1}" />
+            <span class="invoice-page-badge">ص ${idx + 1}</span>
+          </div>
+        `).join("");
+      }
+    } else {
+      if (galleryNav) galleryNav.style.display = "none";
+      if (thumbnailsStrip) thumbnailsStrip.style.display = "none";
+    }
+  }
+
+  static galleryNext() {
+    if (this.viewerCurrentIndex < this.viewerImages.length - 1) {
+      this.viewerCurrentIndex++;
+      this.renderViewerModal();
+    }
+  }
+
+  static galleryPrev() {
+    if (this.viewerCurrentIndex > 0) {
+      this.viewerCurrentIndex--;
+      this.renderViewerModal();
+    }
+  }
+
+  static selectViewerPage(idx) {
+    if (idx >= 0 && idx < this.viewerImages.length) {
+      this.viewerCurrentIndex = idx;
+      this.renderViewerModal();
+    }
   }
 
   // ================= Data Loading & Synchronization =================
