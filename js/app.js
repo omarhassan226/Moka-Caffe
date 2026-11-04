@@ -33,6 +33,9 @@ class AppController {
     window.SmartParserComponent.init(this.store, this);
     window.CatalogManagerComponent.init(this.store, this);
     window.InvoiceViewComponent.init(this.store, this);
+    if (window.AccountingComponent) {
+      window.AccountingComponent.init(this.store, this);
+    }
 
     // 4. Load Data from Backend API
     try {
@@ -119,6 +122,11 @@ class AppController {
       window.InvoiceViewComponent.render();
     } else if (tabId === "categories") {
       window.CategoriesBreakdownComponent.render();
+    } else if (tabId === "accounting") {
+      if (window.AccountingComponent) {
+        window.AccountingComponent.render();
+        window.AccountingComponent.loadData();
+      }
     }
   }
 
@@ -164,11 +172,16 @@ class AppController {
   initApiSettingsModal() {
     const form = document.getElementById("form-api-settings");
     const input = document.getElementById("api-url-input");
+    const geminiKeyInput = document.getElementById("gemini-api-key-input");
     const btnDefault = document.getElementById("btn-api-default");
     const btnLocalhost = document.getElementById("btn-api-localhost");
 
     if (input) {
       input.value = this.api.baseUrl;
+    }
+
+    if (geminiKeyInput) {
+      geminiKeyInput.value = localStorage.getItem("GEMINI_API_KEY") || "";
     }
 
     if (btnDefault && input) {
@@ -188,8 +201,18 @@ class AppController {
         e.preventDefault();
         const newUrl = input ? input.value.trim() : "";
         this.api.setBaseUrl(newUrl || "/api");
+
+        if (geminiKeyInput) {
+          const keyVal = geminiKeyInput.value.trim();
+          if (keyVal) {
+            localStorage.setItem("GEMINI_API_KEY", keyVal);
+          } else {
+            localStorage.removeItem("GEMINI_API_KEY");
+          }
+        }
+
         window.ModalComponent.close("modal-api-settings");
-        window.ToastComponent.show(`تم ضبط رابط الـ API على: ${this.api.baseUrl}`);
+        window.ToastComponent.show(`تم حفظ الإعدادات ومفتاح الذكاء الاصطناعي بنجاح`);
         try {
           await this.loadData(true);
         } catch (err) {

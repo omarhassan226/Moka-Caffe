@@ -151,6 +151,83 @@ class ApiService {
     });
   }
 
+  // Accounting & Monthly P&L
+  getAccountingSummary(month) {
+    const query = month ? `?month=${encodeURIComponent(month)}` : "";
+    return this.request(`/accounting/summary${query}`);
+  }
+
+  getInvoices(params = {}) {
+    const query = new URLSearchParams(params).toString();
+    return this.request(`/accounting/invoices${query ? `?${query}` : ""}`);
+  }
+
+  createInvoice(data) {
+    return this.request("/accounting/invoices", {
+      method: "POST",
+      body: JSON.stringify(data)
+    });
+  }
+
+  scanInvoice(imageData, customApiKey, signal) {
+    const key = customApiKey || (typeof localStorage !== "undefined" ? localStorage.getItem("GEMINI_API_KEY") : "");
+    const headers = {};
+    if (key) {
+      headers["x-gemini-api-key"] = key;
+    }
+    return this.request("/accounting/invoices/scan", {
+      method: "POST",
+      headers,
+      signal,
+      body: JSON.stringify({
+        imageData,
+        apiKey: key
+      })
+    });
+  }
+
+  deleteInvoice(id) {
+    return this.request(`/accounting/invoices/${id}`, {
+      method: "DELETE"
+    });
+  }
+
+  getWasteRecords(params = {}) {
+    const query = new URLSearchParams(params).toString();
+    return this.request(`/accounting/waste${query ? `?${query}` : ""}`);
+  }
+
+  createWasteRecord(data) {
+    return this.request("/accounting/waste", {
+      method: "POST",
+      body: JSON.stringify(data)
+    });
+  }
+
+  deleteWasteRecord(id) {
+    return this.request(`/accounting/waste/${id}`, {
+      method: "DELETE"
+    });
+  }
+
+  getSalesRecords(params = {}) {
+    const query = new URLSearchParams(params).toString();
+    return this.request(`/accounting/sales${query ? `?${query}` : ""}`);
+  }
+
+  createSalesRecord(data) {
+    return this.request("/accounting/sales", {
+      method: "POST",
+      body: JSON.stringify(data)
+    });
+  }
+
+  deleteSalesRecord(id) {
+    return this.request(`/accounting/sales/${id}`, {
+      method: "DELETE"
+    });
+  }
+
   // System
   getHealth() {
     return this.request("/health");

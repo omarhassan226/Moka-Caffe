@@ -63,6 +63,9 @@
       <button class="tab-btn" data-tab="invoice">
         <span>📄 الفاتورة المعتمدة للطباعة</span>
       </button>
+      <button class="tab-btn" data-tab="accounting">
+        <span>📊 الحسابات والويست والمبيعات</span>
+      </button>
       <button class="tab-btn" data-tab="architecture" style="display: none;">
         <span>🚀 الربط وقابلية التوسع (Full-Stack & Mongo)</span>
       </button>
@@ -337,6 +340,247 @@ West
         </div>
       </section>
 
+      <!-- ==================== VIEW: ACCOUNTING, INVOICES, WASTE & SALES ==================== -->
+      <section class="view-panel" id="view-accounting">
+        <!-- Accounting Controls & Month Selector Bar -->
+        <div class="accounting-controls-row">
+          <div class="month-picker-wrap">
+            <span class="month-picker-label">
+              <span>📅 حسابات شهر:</span>
+            </span>
+            <input type="month" id="accounting-month-picker" class="month-input" />
+            <button type="button" class="btn btn-secondary" id="btn-toggle-all-months" style="font-size: 0.82rem; padding: 0.45rem 0.85rem; font-weight: 600;">
+              <span>🌐 عرض كافة الفواتير</span>
+            </button>
+            <button class="btn-icon" id="btn-accounting-refresh" title="تحديث البيانات">🔄</button>
+          </div>
+
+          <div class="accounting-actions-wrap">
+            <button class="btn btn-primary" id="btn-open-add-invoice">
+              <span>📸 رفع فاتورة مشتريات</span>
+            </button>
+            <button class="btn btn-secondary" id="btn-open-add-waste" style="border-color: rgba(244, 63, 94, 0.4); color: var(--color-rose);">
+              <span>🗑️ تسجيل ويست (هالك)</span>
+            </button>
+            <button class="btn btn-secondary" id="btn-open-add-sales" style="border-color: rgba(16, 185, 129, 0.4); color: var(--color-emerald);">
+              <span>💰 تسجيل مبيعات</span>
+            </button>
+            <button class="btn btn-secondary" id="btn-print-accounting-report">
+              <span>🖨️ طباعة التقرير</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Financial KPI Metrics Grid -->
+        <section class="kpi-grid" style="margin-bottom: 1.5rem;">
+          <!-- 1. Total Invoices -->
+          <div class="kpi-card">
+            <div class="kpi-card-header">
+              <span class="kpi-title">📥 فواتير المشتريات الداخلة</span>
+              <div class="kpi-icon" style="background: var(--color-sky-bg); color: var(--color-sky);">🧾</div>
+            </div>
+            <div class="kpi-value" id="acc-kpi-invoices">0.00</div>
+            <div class="kpi-subtext" id="acc-kpi-invoices-count">0 فاتورة مرفوعة</div>
+          </div>
+
+          <!-- 2. Total Waste -->
+          <div class="kpi-card">
+            <div class="kpi-card-header">
+              <span class="kpi-title">🗑️ إجمالي الويست (الهالك والضايع)</span>
+              <div class="kpi-icon" style="background: var(--color-rose-bg); color: var(--color-rose);">⚠️</div>
+            </div>
+            <div class="kpi-value" id="acc-kpi-waste" style="color: var(--color-rose);">0.00</div>
+            <div class="kpi-subtext" id="acc-kpi-waste-ratio">نسبة الهالك: 0.0% من المشتريات</div>
+          </div>
+
+          <!-- 3. Total Sales -->
+          <div class="kpi-card">
+            <div class="kpi-card-header">
+              <span class="kpi-title">📤 إجمالي المبيعات المحصلة</span>
+              <div class="kpi-icon" style="background: var(--color-emerald-bg); color: var(--color-emerald);">💰</div>
+            </div>
+            <div class="kpi-value" id="acc-kpi-sales" style="color: var(--color-emerald);">0.00</div>
+            <div class="kpi-subtext" id="acc-kpi-sales-sub">0 تسجيل مبيعات</div>
+          </div>
+
+          <!-- 4. Net Profit / Performance -->
+          <div class="kpi-card featured">
+            <div class="kpi-card-header">
+              <span class="kpi-title" style="color: var(--accent-gold-light);">💎 صافي النتيجة التشغيلية</span>
+              <div class="kpi-icon" style="background: var(--accent-gold); color: #fff;">📊</div>
+            </div>
+            <div class="kpi-value" id="acc-kpi-net">0.00</div>
+            <div class="kpi-subtext" id="acc-kpi-net-sub" style="color: var(--accent-gold);">المبيعات - (الفواتير + الويست)</div>
+          </div>
+        </section>
+
+        <!-- Subtabs Navigation -->
+        <div class="accounting-subtab-bar">
+          <button class="accounting-subtab-btn active" data-subtab="invoices">
+            <span>🧾 فواتير المشتريات والمدخلات</span>
+          </button>
+          <button class="accounting-subtab-btn" data-subtab="waste">
+            <span>🗑️ سجل الويست (الهالك والضايع)</span>
+          </button>
+          <button class="accounting-subtab-btn" data-subtab="sales">
+            <span>💰 سجل المبيعات</span>
+          </button>
+          <button class="accounting-subtab-btn" data-subtab="analytics">
+            <span>📈 التحليلات والنسب</span>
+          </button>
+        </div>
+
+        <!-- Subpanel 1: Invoices Table -->
+        <div class="accounting-subpanel active" id="accounting-subpanel-invoices">
+          <div class="panel-card">
+            <div class="panel-header">
+              <div class="panel-title">
+                <span>📸 أرشيف فواتير ومشتريات الشهر</span>
+              </div>
+              <button class="btn btn-primary" onclick="window.AccountingComponent.openAddInvoiceModal()" style="font-size: 0.82rem; padding: 0.35rem 0.85rem;">
+                ➕ إضافة فاتورة جديدة
+              </button>
+            </div>
+
+            <div class="table-container">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th style="width: 45px; text-align: center;">#</th>
+                    <th style="width: 75px;">الصورة</th>
+                    <th>المورد / الجهة</th>
+                    <th>التصنيف</th>
+                    <th>المبلغ الإجمالي</th>
+                    <th>تاريخ الفاتورة</th>
+                    <th>ملاحظات</th>
+                    <th style="width: 60px; text-align: center;">إجراء</th>
+                  </tr>
+                </thead>
+                <tbody id="invoices-table-body">
+                  <!-- Injected dynamically -->
+                </tbody>
+              </table>
+
+              <div id="invoices-empty-state" style="display: none; text-align: center; padding: 3rem 1.5rem; color: var(--text-muted);">
+                <div style="font-size: 3rem; margin-bottom: 0.75rem;">🧾</div>
+                <div style="font-size: 1.1rem; font-weight: 700; color: var(--text-primary); margin-bottom: 0.5rem;">
+                  لا توجد فواتير مرفوعة لهذا الشهر حتى الآن
+                </div>
+                <p style="font-size: 0.88rem; margin-bottom: 1.25rem;">
+                  ابدأ برفع صور فواتير المشتريات والخامات ليتم تجميعها واحتسابها تلقائياً.
+                </p>
+                <button class="btn btn-primary" onclick="window.AccountingComponent.openAddInvoiceModal()">
+                  📸 رفع أول فاتورة
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Subpanel 2: Waste Table -->
+        <div class="accounting-subpanel" id="accounting-subpanel-waste">
+          <div class="panel-card">
+            <div class="panel-header">
+              <div class="panel-title">
+                <span>🗑️ سجل الويست (الهالك والتوالف)</span>
+              </div>
+              <button class="btn btn-secondary" onclick="window.AccountingComponent.openAddWasteModal()" style="font-size: 0.82rem; padding: 0.35rem 0.85rem; border-color: rgba(244, 63, 94, 0.4); color: var(--color-rose);">
+                ➕ تسجيل هالك جديد
+              </button>
+            </div>
+
+            <div class="table-container">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th style="width: 45px; text-align: center;">#</th>
+                    <th>الصنف / الخامة</th>
+                    <th>الكمية</th>
+                    <th>قيمة الخسارة</th>
+                    <th>سبب الهالك</th>
+                    <th>المسؤول</th>
+                    <th>التاريخ</th>
+                    <th>ملاحظات</th>
+                    <th style="width: 60px; text-align: center;">إجراء</th>
+                  </tr>
+                </thead>
+                <tbody id="waste-table-body">
+                  <!-- Injected dynamically -->
+                </tbody>
+              </table>
+
+              <div id="waste-empty-state" style="display: none; text-align: center; padding: 3rem 1.5rem; color: var(--text-muted);">
+                <div style="font-size: 3rem; margin-bottom: 0.75rem;">🎉</div>
+                <div style="font-size: 1.1rem; font-weight: 700; color: var(--text-primary); margin-bottom: 0.5rem;">
+                  لا يوجد هالك مسجل لهذا الشهر
+                </div>
+                <p style="font-size: 0.88rem; margin-bottom: 1.25rem;">
+                  ممتاز! التشغيل منضبط ولا توجد خسائر مسجلة، أو اضغط أدناه لتسجيل أي هالك طارئ.
+                </p>
+                <button class="btn btn-secondary" onclick="window.AccountingComponent.openAddWasteModal()">
+                  🗑️ تسجيل هالك
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Subpanel 3: Sales Table -->
+        <div class="accounting-subpanel" id="accounting-subpanel-sales">
+          <div class="panel-card">
+            <div class="panel-header">
+              <div class="panel-title">
+                <span>💰 سجل المبيعات التشغيلية</span>
+              </div>
+              <button class="btn btn-secondary" onclick="window.AccountingComponent.openAddSalesModal()" style="font-size: 0.82rem; padding: 0.35rem 0.85rem; border-color: rgba(16, 185, 129, 0.4); color: var(--color-emerald);">
+                ➕ تسجيل مبيعات
+              </button>
+            </div>
+
+            <div class="table-container">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th style="width: 45px; text-align: center;">#</th>
+                    <th>التاريخ</th>
+                    <th>الفرع</th>
+                    <th>كاش</th>
+                    <th>فيزا / إلكتروني</th>
+                    <th>تطبيقات / دليفري</th>
+                    <th>إجمالي المبيعات</th>
+                    <th style="text-align: center;">عدد الطلبات</th>
+                    <th style="width: 60px; text-align: center;">إجراء</th>
+                  </tr>
+                </thead>
+                <tbody id="sales-table-body">
+                  <!-- Injected dynamically -->
+                </tbody>
+              </table>
+
+              <div id="sales-empty-state" style="display: none; text-align: center; padding: 3rem 1.5rem; color: var(--text-muted);">
+                <div style="font-size: 3rem; margin-bottom: 0.75rem;">💵</div>
+                <div style="font-size: 1.1rem; font-weight: 700; color: var(--text-primary); margin-bottom: 0.5rem;">
+                  لم يتم تسجيل مبيعات لهذا الشهر بعد
+                </div>
+                <p style="font-size: 0.88rem; margin-bottom: 1.25rem;">
+                  سجل مبيعات اليوم أو الشهر لمقارنتها بالفواتير والويست واحتساب صافي الأرباح.
+                </p>
+                <button class="btn btn-primary" onclick="window.AccountingComponent.openAddSalesModal()">
+                  💰 تسجيل مبيعات الآن
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Subpanel 4: Analytics Breakdown -->
+        <div class="accounting-subpanel" id="accounting-subpanel-analytics">
+          <div id="analytics-breakdown-container">
+            <!-- Injected dynamically -->
+          </div>
+        </div>
+      </section>
+
       <!-- ==================== VIEW 6: ARCHITECTURE & FULL-STACK ==================== -->
       <section class="view-panel" id="view-architecture">
         <div class="panel-card">
@@ -554,11 +798,281 @@ West
           </button>
         </div>
 
+        <div class="form-group" style="margin-top: 1rem; border-top: 1px solid var(--border-color); padding-top: 1rem;">
+          <label for="gemini-api-key-input" style="color: var(--accent-gold); display: flex; align-items: center; gap: 0.4rem;">
+            <span>✨</span>
+            <span>مفتاح قراءة الفواتير بالذكاء الاصطناعي (Google Gemini API Key):</span>
+          </label>
+          <input type="password" id="gemini-api-key-input" class="form-control" placeholder="AIzaSy..." style="direction: ltr; text-align: left; font-family: monospace;">
+          <small style="font-size: 0.76rem; color: var(--text-muted); display: block; margin-top: 0.35rem; line-height: 1.5;">
+            يمكنك الحصول على مفتاح مجاني من <a href="https://aistudio.google.com/app/apikey" target="_blank" style="color: var(--accent-gold); text-decoration: underline;">Google AI Studio</a> لقراءة كل الفواتير العربية تلقائياً.
+          </small>
+        </div>
+
         <div class="modal-actions" style="display: flex; justify-content: flex-end; gap: 0.75rem;">
           <button type="button" class="btn btn-secondary" onclick="closeModal('modal-api-settings')">إلغاء</button>
           <button type="submit" class="btn btn-primary" id="btn-save-api">💾 حفظ والاتصال</button>
         </div>
       </form>
+    </div>
+  </div>
+
+  <!-- Modal: Upload Invoice with Image & Receipt Details -->
+  <div class="modal-overlay" id="modal-add-invoice" role="dialog" aria-modal="true">
+    <div class="modal-content" style="max-width: 560px;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem;">
+        <h3 style="font-weight: 700; color: var(--accent-gold); display: flex; align-items: center; gap: 0.5rem; font-size: 1.15rem;">
+          <span>📸</span>
+          <span>رفع وحفظ فاتورة مشتريات جديدة</span>
+        </h3>
+        <button class="btn-icon" onclick="closeModal('modal-add-invoice')" style="border: none;" aria-label="إغلاق">✕</button>
+      </div>
+
+      <form id="form-add-invoice">
+        <!-- Image Upload Drop Zone -->
+        <div class="form-group" style="margin-bottom: 1rem;">
+          <label>صورة الفاتورة / الإيصال:</label>
+          <input type="file" id="invoice-image-file" accept="image/*" style="display: none;" />
+          
+          <div class="invoice-drop-zone" id="invoice-drop-zone">
+            <div class="drop-zone-icon">📷</div>
+            <div class="drop-zone-title">اضغط لاختيار صورة، أو اسحب الصورة وأفلتها هنا</div>
+            <div class="drop-zone-sub">يدعم JPG, PNG, WebP (أو الصق Ctrl+V من الحافظة مباشرة)</div>
+          </div>
+
+          <div class="invoice-preview-container" id="invoice-preview-container" style="display: none;">
+            <img id="invoice-preview-image" class="invoice-preview-image" alt="معاينة الفاتورة" />
+            <div id="ai-scanning-overlay" class="ai-scanning-overlay" style="display: none;">
+              <div class="ai-scan-laser"></div>
+              <div class="ai-scan-badge">⚡ جاري تحليل الفاتورة واستخراج البيانات...</div>
+              <button type="button" class="btn-cancel-scan-badge" id="btn-cancel-scan-overlay" onclick="window.AccountingComponent.cancelAiScan()" style="margin-top: 0.75rem; background: rgba(239, 68, 68, 0.9); border: 1px solid #ef4444; color: #fff; border-radius: var(--radius-full); padding: 0.35rem 1rem; font-size: 0.8rem; font-weight: 700; cursor: pointer; display: flex; align-items: center; gap: 0.35rem; z-index: 10; box-shadow: 0 4px 12px rgba(0,0,0,0.4);">
+                <span>🛑 إيقاف الفحص الآن</span>
+              </button>
+            </div>
+            <button type="button" class="btn-remove-preview" id="btn-remove-invoice-image" title="إزالة الصورة">✕</button>
+          </div>
+
+          <!-- AI Scan Action Bar -->
+          <div id="ai-scan-actions-bar" style="display: none; margin-top: 0.75rem; background: rgba(245, 158, 11, 0.08); border: 1px dashed rgba(245, 158, 11, 0.4); border-radius: var(--radius-sm); padding: 0.75rem; text-align: center;">
+            <div style="display: flex; gap: 0.5rem; align-items: center;">
+              <button type="button" class="btn btn-primary" id="btn-ai-scan-invoice" style="flex: 1; justify-content: center; font-size: 0.92rem; background: linear-gradient(135deg, #f59e0b, #d97706); box-shadow: 0 4px 14px rgba(217, 119, 6, 0.35);">
+                <span class="ai-sparkle-icon">✨</span>
+                <span id="btn-ai-scan-text">استخراج بيانات الفاتورة بالذكاء الاصطناعي (AI OCR)</span>
+              </button>
+              <button type="button" class="btn btn-secondary" id="btn-cancel-ai-scan" onclick="window.AccountingComponent.cancelAiScan()" style="display: none; background: rgba(239, 68, 68, 0.15); border-color: rgba(239, 68, 68, 0.5); color: #f87171; padding: 0.55rem 0.9rem; font-size: 0.85rem; font-weight: 700; white-space: nowrap;" title="إيقاف الفحص الحالي">
+                <span>🛑 إيقاف</span>
+              </button>
+            </div>
+            <div id="ai-scan-status-message" style="display: none; margin-top: 0.5rem; font-size: 0.84rem; font-weight: 600;"></div>
+          </div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+          <div class="form-group">
+            <label for="invoice-supplier-input">اسم المورد / المحل: *</label>
+            <input type="text" id="invoice-supplier-input" class="form-control" placeholder="مثال: بن النجار، ألبان جهينة" required />
+          </div>
+          <div class="form-group">
+            <label for="invoice-amount-input">المبلغ الإجمالي (ج.م): *</label>
+            <input type="number" id="invoice-amount-input" class="form-control" placeholder="0.00" step="0.01" min="0" required />
+          </div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+          <div class="form-group">
+            <label for="invoice-category-input">تصنيف الفاتورة:</label>
+            <select id="invoice-category-input" class="form-control">
+              <option value="خامات وبن">☕ بن وخامات مشروبات</option>
+              <option value="ألبان وسيرب">🥛 ألبان وسيرب ونكهات</option>
+              <option value="حلويات ومخبوزات">🥐 حلويات ومخبوزات</option>
+              <option value="تعبئة وتغليف">📦 أكواب ومستلزمات تعبئة</option>
+              <option value="نظافة ومستهلكات">🧼 أدوات نظافة ومستهلكات</option>
+              <option value="صيانة وتشغيل">⚙️ صيانة ومصاريف تشغيل</option>
+              <option value="أخرى">📑 فواتير ومصروفات أخرى</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="invoice-number-input">رقم الفاتورة (اختياري):</label>
+            <input type="text" id="invoice-number-input" class="form-control" placeholder="مثال: INV-1042" />
+          </div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+          <div class="form-group">
+            <label for="invoice-date-input">تاريخ الفاتورة:</label>
+            <input type="date" id="invoice-date-input" class="form-control" />
+          </div>
+          <div class="form-group">
+            <label for="invoice-notes-input">ملاحظات إضافية:</label>
+            <input type="text" id="invoice-notes-input" class="form-control" placeholder="أي تفاصيل أو ملاحظات..." />
+          </div>
+        </div>
+
+        <div class="modal-actions" style="display: flex; justify-content: flex-end; gap: 0.75rem; margin-top: 1rem;">
+          <button type="button" class="btn btn-secondary" onclick="closeModal('modal-add-invoice')">إلغاء</button>
+          <button type="submit" class="btn btn-primary" id="btn-submit-invoice">💾 حفظ الفاتورة</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal: Add Waste (تسجيل الهالك والضايع) -->
+  <div class="modal-overlay" id="modal-add-waste" role="dialog" aria-modal="true">
+    <div class="modal-content" style="max-width: 520px;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem;">
+        <h3 style="font-weight: 700; color: var(--color-rose); display: flex; align-items: center; gap: 0.5rem; font-size: 1.15rem;">
+          <span>🗑️</span>
+          <span>تسجيل هالك / ويست جديد</span>
+        </h3>
+        <button class="btn-icon" onclick="closeModal('modal-add-waste')" style="border: none;" aria-label="إغلاق">✕</button>
+      </div>
+
+      <form id="form-add-waste">
+        <div class="form-group">
+          <label for="waste-item-input">اسم الصنف أو الخامة الهالكة: *</label>
+          <input type="text" id="waste-item-input" class="form-control" placeholder="مثال: لبن جهينة كامل الدسم، شوت إسبريسو، كرواسون شوكولاتة" required />
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+          <div class="form-group">
+            <label for="waste-quantity-input">الكمية: *</label>
+            <input type="number" id="waste-quantity-input" class="form-control" value="1" min="0.1" step="0.1" required />
+          </div>
+          <div class="form-group">
+            <label for="waste-unit-input">الوحدة:</label>
+            <select id="waste-unit-input" class="form-control">
+              <option value="قطعة">قطعة</option>
+              <option value="لتر">لتر</option>
+              <option value="كيلو">كيلو</option>
+              <option value="جرام">جرام</option>
+              <option value="شوت">شوت (Shot)</option>
+              <option value="علبة">علبة / باكت</option>
+            </select>
+          </div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+          <div class="form-group">
+            <label for="waste-loss-input">قيمة الخسارة التقديرية (ج.م): *</label>
+            <input type="number" id="waste-loss-input" class="form-control" placeholder="0.00" step="0.01" min="0" required />
+          </div>
+          <div class="form-group">
+            <label for="waste-reason-input">سبب الهالك / التلف:</label>
+            <select id="waste-reason-input" class="form-control">
+              <option value="تلف / سوء تخزين">❄️ تلف / سوء تخزين أو حموضة</option>
+              <option value="انتهاء صلاحية">⏳ انتهاء صلاحية</option>
+              <option value="خطأ باريستا / تحضير">☕ خطأ تحضير / باريستا</option>
+              <option value="معايرة بن (Dial-in)">⚖️ معايرة مطحنة وبن (Dial-in)</option>
+              <option value="كسر / انسكاب">💥 كسر أو سكب عرضي</option>
+              <option value="أخرى">📝 أسباب تشغيلية أخرى</option>
+            </select>
+          </div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+          <div class="form-group">
+            <label for="waste-date-input">تاريخ الهالك:</label>
+            <input type="date" id="waste-date-input" class="form-control" />
+          </div>
+          <div class="form-group">
+            <label for="waste-responsible-input">المسؤول / الشيفت:</label>
+            <input type="text" id="waste-responsible-input" class="form-control" placeholder="مثال: شيفت الصباح، باريستا أحمد" />
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="waste-notes-input">ملاحظات توضيحية:</label>
+          <input type="text" id="waste-notes-input" class="form-control" placeholder="سبب المشكلة لتفادي تكرارها مستقبلاً..." />
+        </div>
+
+        <div class="modal-actions" style="display: flex; justify-content: flex-end; gap: 0.75rem; margin-top: 1rem;">
+          <button type="button" class="btn btn-secondary" onclick="closeModal('modal-add-waste')">إلغاء</button>
+          <button type="submit" class="btn btn-primary" id="btn-submit-waste" style="background: linear-gradient(135deg, #f43f5e, #e11d48);">🗑️ حفظ الهالك</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal: Add Sales (تسجيل المبيعات اليومية/الشهرية) -->
+  <div class="modal-overlay" id="modal-add-sales" role="dialog" aria-modal="true">
+    <div class="modal-content" style="max-width: 520px;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem;">
+        <h3 style="font-weight: 700; color: var(--color-emerald); display: flex; align-items: center; gap: 0.5rem; font-size: 1.15rem;">
+          <span>💰</span>
+          <span>تسجيل مبيعات تشغيلية</span>
+        </h3>
+        <button class="btn-icon" onclick="closeModal('modal-add-sales')" style="border: none;" aria-label="إغلاق">✕</button>
+      </div>
+
+      <form id="form-add-sales">
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+          <div class="form-group">
+            <label for="sales-date-input">تاريخ المبيعات: *</label>
+            <input type="date" id="sales-date-input" class="form-control" required />
+          </div>
+          <div class="form-group">
+            <label for="sales-branch-input">الفرع / النقطة:</label>
+            <input type="text" id="sales-branch-input" class="form-control" value="الفرع الرئيسي" />
+          </div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0.75rem;">
+          <div class="form-group">
+            <label for="sales-cash-input">كاش (ج.م):</label>
+            <input type="number" id="sales-cash-input" class="form-control" placeholder="0.00" step="0.01" min="0" />
+          </div>
+          <div class="form-group">
+            <label for="sales-visa-input">فيزا (ج.م):</label>
+            <input type="number" id="sales-visa-input" class="form-control" placeholder="0.00" step="0.01" min="0" />
+          </div>
+          <div class="form-group">
+            <label for="sales-online-input">تطبيقات / دليفري:</label>
+            <input type="number" id="sales-online-input" class="form-control" placeholder="0.00" step="0.01" min="0" />
+          </div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+          <div class="form-group">
+            <label for="sales-total-input">الإجمالي المحسوب (ج.م): *</label>
+            <input type="number" id="sales-total-input" class="form-control" placeholder="0.00" step="0.01" min="0" required style="font-weight: 700; color: var(--color-emerald);" />
+          </div>
+          <div class="form-group">
+            <label for="sales-orders-input">عدد الشيكات / الطلبات:</label>
+            <input type="number" id="sales-orders-input" class="form-control" placeholder="0" min="0" />
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="sales-notes-input">ملاحظات المبيعات:</label>
+          <input type="text" id="sales-notes-input" class="form-control" placeholder="مثال: مبيعات الويك إند، تقفيل شيفت المساء..." />
+        </div>
+
+        <div class="modal-actions" style="display: flex; justify-content: flex-end; gap: 0.75rem; margin-top: 1rem;">
+          <button type="button" class="btn btn-secondary" onclick="closeModal('modal-add-sales')">إلغاء</button>
+          <button type="submit" class="btn btn-primary" id="btn-submit-sales" style="background: linear-gradient(135deg, #10b981, #059669);">💰 حفظ المبيعات</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal: Full Screen Invoice Image Viewer -->
+  <div class="modal-overlay" id="modal-full-invoice-image" role="dialog" aria-modal="true">
+    <div class="modal-content" style="max-width: 820px; background: rgba(11, 15, 25, 0.95); text-align: center; padding: 1.25rem;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+        <h3 id="full-invoice-modal-title" style="font-weight: 700; color: var(--accent-gold); font-size: 1.1rem;">
+          صورة الفاتورة
+        </h3>
+        <div style="display: flex; gap: 0.5rem; align-items: center;">
+          <a id="btn-download-full-invoice" class="btn btn-secondary" style="font-size: 0.8rem; padding: 0.35rem 0.75rem;" download="فاتورة.jpg">
+            💾 تحميل الصورة
+          </a>
+          <button class="btn-icon" onclick="closeModal('modal-full-invoice-image')" style="border: none;" aria-label="إغلاق">✕</button>
+        </div>
+      </div>
+
+      <div style="max-height: 75vh; overflow: auto; border-radius: var(--radius-sm); border: 1px solid var(--border-color); background: #000; display: flex; align-items: center; justify-content: center; padding: 0.5rem;">
+        <img id="full-invoice-modal-image" src="" alt="صورة الفاتورة بالحجم الكامل" style="max-width: 100%; max-height: 72vh; object-fit: contain; border-radius: 4px;" />
+      </div>
     </div>
   </div>
 
@@ -581,6 +1095,7 @@ West
   <script src="js/components/smartParser.js"></script>
   <script src="js/components/catalogManager.js"></script>
   <script src="js/components/invoiceView.js"></script>
+  <script src="js/components/accounting.js"></script>
   <script src="js/app.js"></script>
 </body>
 
