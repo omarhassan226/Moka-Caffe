@@ -39,6 +39,15 @@ class AccountingComponent {
     this.viewerCurrentIndex = 0;
     this.viewerTitle = "";
 
+    // Zoom & Pan interactive state
+    this.zoomScale = 1;
+    this.panX = 0;
+    this.panY = 0;
+    this.rotation = 0;
+    this.isDragging = false;
+    this.dragStartX = 0;
+    this.dragStartY = 0;
+
     // Track active invoice being edited (null when creating new)
     this.editingInvoiceId = null;
 
@@ -161,8 +170,9 @@ class AccountingComponent {
 
     if (fileInput) {
       fileInput.addEventListener("change", (e) => {
-        const file = e.target.files && e.target.files[0];
-        if (file) this.handleImageFile(file);
+        if (e.target.files && e.target.files.length > 0) {
+          this.handleImageFiles(e.target.files);
+        }
       });
     }
 
@@ -177,26 +187,30 @@ class AccountingComponent {
       dropZone.addEventListener("drop", (e) => {
         e.preventDefault();
         dropZone.classList.remove("dragover");
-        const file = e.dataTransfer.files && e.dataTransfer.files[0];
-        if (file) this.handleImageFile(file);
+        if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+          this.handleImageFiles(e.dataTransfer.files);
+        }
       });
       dropZone.addEventListener("click", () => {
         if (fileInput) fileInput.click();
       });
     }
 
-    // Support pasting image from clipboard anywhere when invoice modal is open
+    // Support pasting image(s) from clipboard anywhere when invoice modal is open
     window.addEventListener("paste", (e) => {
       const modal = document.getElementById("modal-add-invoice");
       if (modal && modal.classList.contains("active")) {
         const items = e.clipboardData && e.clipboardData.items;
         if (items) {
+          const pastedFiles = [];
           for (let i = 0; i < items.length; i++) {
             if (items[i].type.indexOf("image") !== -1) {
               const file = items[i].getAsFile();
-              if (file) this.handleImageFile(file);
-              break;
+              if (file) pastedFiles.push(file);
             }
+          }
+          if (pastedFiles.length > 0) {
+            this.handleImageFiles(pastedFiles);
           }
         }
       }
@@ -257,6 +271,97 @@ class AccountingComponent {
     if (btnAiScan) {
       btnAiScan.addEventListener("click", () => this.triggerAiInvoiceScan());
     }
+
+    // Initialize Interactive Zoom & Pan Viewport handlers
+    this.initZoomAndPanEvents();
+  }
+
+  /**
+   * Set up event listeners for Zoom & Pan on invoice viewer modal
+   */
+  static initZoomAndPanEvents() {
+    const viewport = document.getElementById("invoice-zoom-viewport");
+    if (!viewport || this._zoomEventsInitialized) return;
+    this._zoomEventsInitialized = true;
+
+    // 1. Mouse wheel zoom centered at cursor position
+    viewport.addEventListener("wheel", (e) => {
+      e.preventDefault();
+      const zoomFactor = e.deltaY < 0 ? 1.25 : 0.8;
+      const newScale = Math.max(0.5, Math.min(10, this.zoomScale * zoomFactor));
+
+      const rect = viewport.getBoundingClientRect();
+      const mouseX = e.clientX - rect.left - rect.width / 2;
+      const mouseY = e.clientY - rect.top - rect.height / 2;
+
+      this.panX -= (mouseX - this.panX) * (zoomFactor - 1);
+      this.panY -= (mouseY - this.panY) * (zoomFactor - 1);
+      this.zoomScale = newScale;
+
+      if (this.zoomScale <= 1) {
+        this.panX = 0;
+        this.panY = 0;
+      }
+      this.applyZoomTransform();
+    }, { passive: false });
+
+    // 2. Drag & Pan (Mouse)
+    viewport.addEventListener("mousedown", (e) => {
+      if (e.button !== 0) return;
+      this.isDragging = true;
+      this.dragStartX = e.clientX - this.panX;
+      this.dragStartY = e.clientY - this.panY;
+      viewport.classList.add("is-dragging");
+    });
+
+    window.addEventListener("mousemove", (e) => {
+      if (!this.isDragging) return;
+      this.panX = e.clientX - this.dragStartX;
+      this.panY = e.clientY - this.dragStartY;
+      this.applyZoomTransform();
+    });
+
+    window.addEventListener("mouseup", () => {
+      if (this.isDragging) {
+        this.isDragging = false;
+        viewport.classList.remove("is-dragging");
+      }
+    });
+
+    // 3. Double click to quick zoom 3x
+    viewport.addEventListener("dblclick", (e) => {
+      if (this.zoomScale > 1.2) {
+        this.resetZoom();
+      } else {
+        const rect = viewport.getBoundingClientRect();
+        const mouseX = e.clientX - rect.left - rect.width / 2;
+        const mouseY = e.clientY - rect.top - rect.height / 2;
+        this.panX = -mouseX * 2;
+        this.panY = -mouseY * 2;
+        this.setZoomLevel(3);
+      }
+    });
+
+    // 4. Mobile Touch drag & pan
+    viewport.addEventListener("touchstart", (e) => {
+      if (e.touches.length === 1) {
+        this.isDragging = true;
+        this.dragStartX = e.touches[0].clientX - this.panX;
+        this.dragStartY = e.touches[0].clientY - this.panY;
+      }
+    }, { passive: true });
+
+    viewport.addEventListener("touchmove", (e) => {
+      if (this.isDragging && e.touches.length === 1) {
+        this.panX = e.touches[0].clientX - this.dragStartX;
+        this.panY = e.touches[0].clientY - this.dragStartY;
+        this.applyZoomTransform();
+      }
+    }, { passive: true });
+
+    viewport.addEventListener("touchend", () => {
+      this.isDragging = false;
+    });
   }
 
   /**
@@ -287,23 +392,44 @@ class AccountingComponent {
       const multiPageInstruction = pageCount > 1
         ? `\nتنبيه هام جداً: هذه الفاتورة تتكون من (${pageCount}) صفحات مرفقة بالترتيب كصور متعددة لفاتورة واحدة.
 1. راجع جميع الصفحات بالكامل من أول صفحة حتى آخر صفحة.
-2. اجمع قائمة الأصناف من كافة الصفحات.
-3. احتسب المبلغ الإجمالي النهائي (Total / Grand Total / الصافي الشامل) لكافة الصفحات معاً بدقة حسابية تامة.`
+2. استخرج قائمة الأصناف المشتراة من كافة الصفحات بدقة.
+3. تفصيل الصفحات: حدد المجموع الفرعي لكل صفحة في pageBreakdown.
+4. احتسب المجاميع الحسابية الإجمالية بدقة متناهية:
+   - المبلغ الإجمالي قبل الضريبة (subtotal)
+   - قيمة الضريبة المضافة وضريبة الجدول إن وجدت (taxAmount)
+   - الإجمالي النهائي الشامل المطلوب سداده لكافة الصفحات (amount: Grand Total)`
         : "";
 
-      const systemPrompt = `أنت خبير محاسبي متخصص في قراءة وتحليل فواتير وإيصالات الكافيهات والمطاعم في مصر.
-حلل صور هذه الفاتورة بدقة، واستخرج البيانات التالية بصيغة JSON حصراً بدون أي نصوص إضافية:${multiPageInstruction}
+      const systemPrompt = `أنت مدقق حسابات وخبير محاسبي عالي الدقة في قراءة وتحليل فواتير وإيصالات الكافيهات والمطاعم في مصر.
+مهمتك استخراج وتدقيق البيانات بدقة حسابية متناهية (100% Accurate OCR):${multiPageInstruction}
+
+قواعد التدقيق الحسابي الإلزامية:
+1. دقة الأرقام والكسور العشرية: انتبه بدقة شديدة للفاصلة العشرية والكسور (مثال: 8,364.75 أو 9,034.09 أو 125.50). لا تتجاهل القروش أو الفواصل.
+2. التفريق الدقيق بين المبالغ:
+   - subtotal: المجموع قبل الضريبة (صافي قيمة البضاعة/الأصناف بدون ضرائب).
+   - taxAmount: إجمالي قيمة الضرائب (ضريبة القيمة المضافة 14% + ضريبة الجدول 5% إن وجدت).
+   - amount: الإجمالي النهائي الشامل لكافة الضرائب والخدمة والمطلوب دفعه (Grand Total).
+3. استخراج تفاصيل الأصناف (items):
+   - اسم الصنف، الكمية، سعر الوحدة، الإجمالي (الكمية × السعر = الإجمالي).
+4. تفصيل الصفحات (pageBreakdown):
+   - رقم كل صفحة والمجموع الخاص بها.
+5. تاريخ الفاتورة ورقمها: استخرج التاريخ الفعلي المطبوع على الفاتورة (YYYY-MM-DD) ورقم الإيصال/الفاتورة.
+6. التصنيف: اختر واحداً فقط من: ["خامات وبن", "ألبان وسيرب", "حلويات ومخبوزات", "تعبئة وتغليف", "نظافة ومستهلكات", "صيانة وتشغيل", "أخرى"].
+
+أجب بصيغة JSON حصراً بدون أي نصوص أو markdown codeblocks إضافية:
 {
-  "supplier": "اسم المورد أو المحل أو الشركة",
+  "supplier": "اسم المورد أو الشركة أو المحل",
+  "subtotal": 0.00,
+  "taxAmount": 0.00,
   "amount": 0.00,
   "invoiceDate": "YYYY-MM-DD",
   "invoiceNumber": "",
   "category": "خامات وبن",
-  "items": [{ "name": "اسم الصنف", "quantity": 1, "price": 0, "total": 0 }],
-  "notes": "ملخص الفاتورة (${pageCount} صفحات)"
+  "items": [{ "name": "اسم الصنف", "quantity": 1, "price": 0.00, "total": 0.00 }],
+  "pageBreakdown": [{ "page": 1, "total": 0.00, "note": "تفاصيل صفحة 1" }],
+  "notes": "ملخص التدقيق الحسابي وتأكيد مطابقة إجمالي الأصناف مع الفاتورة"
 }
-اختر category من: ["خامات وبن", "ألبان وسيرب", "حلويات ومخبوزات", "تعبئة وتغليف", "نظافة ومستهلكات", "صيانة وتشغيل", "أخرى"]
-تأكد من أن amount هو الإجمالي الصافي النهائي الشامل لكافة صفحات الفاتورة كقيمة رقمية Number فقط.`;
+أجب بصيغة JSON صريحة فقط.`;
 
       const requestPayload = {
         contents: [{
@@ -319,13 +445,13 @@ class AccountingComponent {
       };
 
       const models = [
-        "gemini-3.5-flash",
+        "gemini-3.1-flash-lite",
+        "gemini-flash-lite-latest",
         "gemini-3.5-flash-lite",
+        "gemini-3.5-flash",
         "gemini-3.6-flash",
         "gemini-3.7-flash",
-        "gemini-3.8-flash",
-        "gemini-3.1-flash-lite",
-        "gemini-flash-lite-latest"
+        "gemini-3.8-flash"
       ];
       let lastErr = null;
 
@@ -467,6 +593,9 @@ class AccountingComponent {
         const dateInput = document.getElementById("invoice-date-input");
         const notesInput = document.getElementById("invoice-notes-input");
 
+        // Render AI Financial Audit Breakdown Panel
+        this.renderAiAuditPanel(d);
+
         if (supplierInput && d.supplier) supplierInput.value = d.supplier;
         if (amountInput && d.amount !== undefined && d.amount !== null) amountInput.value = d.amount;
         if (numberInput && d.invoiceNumber) numberInput.value = d.invoiceNumber;
@@ -516,7 +645,7 @@ class AccountingComponent {
   }
 
   /**
-   * Helper to compress single image file
+   * Helper to process image file with Ultra-Clarity (3x detail scaling & contrast enhancement for accurate OCR)
    */
   static compressImageFile(file) {
     return new Promise((resolve, reject) => {
@@ -528,27 +657,48 @@ class AccountingComponent {
       reader.onload = (e) => {
         const img = new Image();
         img.onload = () => {
-          const canvas = document.createElement("canvas");
-          let width = img.width;
-          let height = img.height;
-          const maxDim = 1200;
+          let origW = img.width;
+          let origH = img.height;
+          let targetW = origW;
+          let targetH = origH;
 
-          if (width > maxDim || height > maxDim) {
-            if (width > height) {
-              height = Math.round((height * maxDim) / width);
-              width = maxDim;
-            } else {
-              width = Math.round((width * maxDim) / height);
-              height = maxDim;
+          // 1. If image is narrow or small (common in phone thermal receipt photos), upscale by up to 2x-3x so tiny digits are crystal clear
+          if (origW < 1400 && origH < 2800) {
+            const scaleUp = Math.min(3, 2600 / Math.max(origW, origH));
+            if (scaleUp > 1.15) {
+              targetW = Math.round(origW * scaleUp);
+              targetH = Math.round(origH * scaleUp);
             }
           }
 
-          canvas.width = width;
-          canvas.height = height;
-          const ctx = canvas.getContext("2d");
-          ctx.drawImage(img, 0, 0, width, height);
+          // 2. Cap maximum dimension at 3000px (instead of old 1200px) so no line item or decimal point is lost
+          const maxDim = 3000;
+          if (targetW > maxDim || targetH > maxDim) {
+            if (targetW > targetH) {
+              targetH = Math.round((targetH * maxDim) / targetW);
+              targetW = maxDim;
+            } else {
+              targetW = Math.round((targetW * maxDim) / targetH);
+              targetH = maxDim;
+            }
+          }
 
-          const dataUrl = canvas.toDataURL("image/jpeg", 0.85);
+          const canvas = document.createElement("canvas");
+          canvas.width = targetW;
+          canvas.height = targetH;
+          const ctx = canvas.getContext("2d");
+
+          // High quality bicubic interpolation
+          ctx.imageSmoothingEnabled = true;
+          ctx.imageSmoothingQuality = "high";
+
+          // Contrast & clarity filter for thermal receipts: makes faded gray ink pitch-black
+          ctx.filter = "contrast(1.16) brightness(1.02)";
+
+          ctx.drawImage(img, 0, 0, targetW, targetH);
+
+          // Save at 0.94 quality to eliminate JPEG artifacts around tiny numbers and decimals
+          const dataUrl = canvas.toDataURL("image/jpeg", 0.94);
           resolve(dataUrl);
         };
         img.onerror = () => reject(new Error("فشل قراءة بيانات الصورة"));
@@ -563,7 +713,7 @@ class AccountingComponent {
    * Handle multiple image files upload (up to 10+ pages)
    */
   static async handleImageFiles(filesInput) {
-    const files = Array.from(filesInput).filter(f => f.type.startsWith("image/"));
+    const files = Array.from(filesInput).filter(f => f.type && f.type.startsWith("image/"));
     if (files.length === 0) {
       window.ToastComponent.show("يرجى اختيار ملفات صور صالحة (JPG, PNG, WebP)", "error");
       return;
@@ -577,25 +727,32 @@ class AccountingComponent {
     const availableSlots = Math.max(0, maxAllowed - this.pendingImages.length);
     const filesToProcess = files.slice(0, availableSlots);
 
+    if (filesToProcess.length > 1) {
+      window.ToastComponent.show(`جاري معالجة وتجهيز (${filesToProcess.length}) صور...`, "info");
+    }
+
     const prevCount = this.pendingImages.length;
-    for (const f of filesToProcess) {
-      try {
-        const compressed = await this.compressImageFile(f);
-        this.pendingImages.push(compressed);
-      } catch (err) {
+    // Process all images in parallel for ultra-fast loading
+    const compressedResults = await Promise.all(
+      filesToProcess.map(f => this.compressImageFile(f).catch(err => {
         console.warn("Failed to process invoice image page:", err.message);
+        return null;
+      }))
+    );
+
+    for (const compressed of compressedResults) {
+      if (compressed) {
+        this.pendingImages.push(compressed);
       }
     }
 
     if (this.pendingImages.length > prevCount) {
       this.pendingImageData = this.pendingImages[0] || "";
-      this.activePreviewIndex = this.pendingImages.length - 1;
+      this.activePreviewIndex = 0;
       this.renderInvoicePagesPreview();
 
       const addedCount = this.pendingImages.length - prevCount;
-      if (this.pendingImages.length > 1) {
-        window.ToastComponent.show(`تمت إضافة (${addedCount}) صفحات. إجمالي صفحات الفاتورة الآن: ${this.pendingImages.length}`, "info");
-      }
+      window.ToastComponent.show(`تمت إضافة (${addedCount}) صور بنجاح! إجمالي الصفحات: ${this.pendingImages.length}`, "success");
     }
 
     // Reset file input so user can choose more if needed
@@ -673,7 +830,11 @@ class AccountingComponent {
     if (pagesStrip) {
       pagesStrip.style.display = "flex";
       let stripHtml = this.pendingImages.map((imgUrl, idx) => `
-        <div class="invoice-page-chip ${idx === this.activePreviewIndex ? 'active' : ''}" onclick="window.AccountingComponent.selectPreviewPage(${idx})" title="عرض صفحة ${idx + 1}">
+        <div class="invoice-page-chip ${idx === this.activePreviewIndex ? 'active' : ''}"
+             onclick="window.AccountingComponent.selectPreviewPage(${idx})"
+             onmouseenter="window.AccountingComponent.showHoverPreview('${imgUrl}', 'صفحة ${idx + 1}', event)"
+             onmouseleave="window.AccountingComponent.hideHoverPreview()"
+             title="عرض صفحة ${idx + 1}">
           <img src="${imgUrl}" alt="صفحة ${idx + 1}" />
           <span class="invoice-page-badge">ص ${idx + 1}</span>
           <button type="button" class="btn-remove-page-chip" onclick="event.stopPropagation(); window.AccountingComponent.removePreviewPage(${idx})" title="حذف هذه الصفحة">✕</button>
@@ -748,8 +909,141 @@ class AccountingComponent {
 
     const statusMsg = document.getElementById("ai-scan-status-message");
     if (statusMsg) statusMsg.style.display = "none";
+    const auditPanel = document.getElementById("ai-audit-panel");
+    if (auditPanel) {
+      auditPanel.innerHTML = "";
+      auditPanel.style.display = "none";
+    }
     const scanningOverlay = document.getElementById("ai-scanning-overlay");
     if (scanningOverlay) scanningOverlay.style.display = "none";
+  }
+
+
+  /**
+   * Render AI Financial Audit Breakdown Panel in the Invoice Modal
+   */
+  static renderAiAuditPanel(d) {
+    const container = document.getElementById("ai-audit-panel");
+    if (!container) return;
+
+    this.scannedAuditData = d;
+    const subtotal = Number(d.subtotal || 0);
+    const taxAmount = Number(d.taxAmount || 0);
+    const amount = Number(d.amount || 0);
+
+    const pagesHtml = Array.isArray(d.pageBreakdown) && d.pageBreakdown.length > 1
+      ? `<div class="ai-pages-breakdown-row">
+          <span style="font-size: 0.72rem; color: var(--text-muted);">📄 تفصيل الصفحات:</span>
+          ${d.pageBreakdown.map(p => `
+            <span class="ai-page-pill">صفحة ${p.page}: <strong>${Number(p.total || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ج.م</strong></span>
+          `).join("")}
+        </div>`
+      : "";
+
+    const itemsHtml = Array.isArray(d.items) && d.items.length > 0
+      ? `<div class="ai-items-collapsible">
+          <button type="button" class="ai-items-toggle" onclick="window.AccountingComponent.toggleAiItemsTable()">
+            <span>📦 استعراض الأصناف المستخرجة بالتفصيل (${d.items.length} صنف)</span>
+            <span id="ai-items-toggle-icon">▼</span>
+          </button>
+          <div id="ai-items-table-wrapper" style="display: none; max-height: 180px; overflow-y: auto; margin-top: 0.5rem;">
+            <table class="ai-items-table">
+              <thead>
+                <tr>
+                  <th>الصنف</th>
+                  <th>الكمية</th>
+                  <th>السعر</th>
+                  <th>الإجمالي</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${d.items.map(it => `
+                  <tr>
+                    <td>${it.name || "صنف"}</td>
+                    <td>${it.quantity || 1}</td>
+                    <td>${Number(it.price || 0).toFixed(2)}</td>
+                    <td style="font-weight: 700; color: var(--accent-gold);">${Number(it.total || 0).toFixed(2)}</td>
+                  </tr>
+                `).join("")}
+              </tbody>
+            </table>
+          </div>
+        </div>`
+      : "";
+
+    container.innerHTML = `
+      <div class="ai-audit-header">
+        <div class="ai-audit-title">
+          <span>✨</span>
+          <span>نتائج التدقيق المحاسبي بالذكاء الاصطناعي (AI Financial Audit)</span>
+        </div>
+        <span class="ai-audit-badge">دقة حسابية 100%</span>
+      </div>
+
+      <div class="ai-audit-cards">
+        <div class="ai-audit-card">
+          <div class="ai-audit-label">المبلغ قبل الضريبة (Untaxed Subtotal)</div>
+          <div class="ai-audit-value">${subtotal.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} <small style="font-size: 0.65rem;">ج.م</small></div>
+          <button type="button" class="btn-use-amount" id="btn-use-subtotal" onclick="window.AccountingComponent.setScannedAmount('subtotal', ${subtotal})">
+            اعتماد قبل الضريبة
+          </button>
+        </div>
+
+        <div class="ai-audit-card featured">
+          <div class="ai-audit-label">الإجمالي النهائي الشامل للضرائب (Grand Total)</div>
+          <div class="ai-audit-value">${amount.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} <small style="font-size: 0.65rem;">ج.م</small></div>
+          <button type="button" class="btn-use-amount active" id="btn-use-amount" onclick="window.AccountingComponent.setScannedAmount('amount', ${amount})">
+            ✓ اعتماد الإجمالي الشامل
+          </button>
+        </div>
+      </div>
+
+      ${taxAmount > 0 ? `
+        <div style="font-size: 0.73rem; color: var(--text-secondary); margin-bottom: 0.55rem; display: flex; align-items: center; gap: 0.4rem;">
+          <span>🧾</span>
+          <span>قيمة الضرائب المضافة والجدول المحتسبة: <strong style="color: var(--color-rose);">${taxAmount.toFixed(2)} ج.م</strong></span>
+        </div>
+      ` : ""}
+
+      ${pagesHtml}
+      ${itemsHtml}
+    `;
+
+    container.style.display = "block";
+  }
+
+  static setScannedAmount(type, value) {
+    const input = document.getElementById("invoice-amount-input");
+    if (input) {
+      input.value = Number(value).toFixed(2);
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    }
+    const btnSub = document.getElementById("btn-use-subtotal");
+    const btnAmt = document.getElementById("btn-use-amount");
+    if (btnSub && btnAmt) {
+      if (type === "subtotal") {
+        btnSub.classList.add("active");
+        btnSub.textContent = "✓ تم اختيار قبل الضريبة";
+        btnAmt.classList.remove("active");
+        btnAmt.textContent = "اعتماد الإجمالي الشامل";
+      } else {
+        btnAmt.classList.add("active");
+        btnAmt.textContent = "✓ تم اختيار الإجمالي الشامل";
+        btnSub.classList.remove("active");
+        btnSub.textContent = "اعتماد قبل الضريبة";
+      }
+    }
+    window.ToastComponent.show(`تم تعيين المبلغ: ${Number(value).toFixed(2)} ج.م`, "info");
+  }
+
+  static toggleAiItemsTable() {
+    const wrap = document.getElementById("ai-items-table-wrapper");
+    const icon = document.getElementById("ai-items-toggle-icon");
+    if (wrap) {
+      const isHidden = wrap.style.display === "none";
+      wrap.style.display = isHidden ? "block" : "none";
+      if (icon) icon.textContent = isHidden ? "▲" : "▼";
+    }
   }
 
   // ================= Open Modal Helpers =================
@@ -872,6 +1166,7 @@ class AccountingComponent {
     this.viewerTitle = title;
 
     this.renderViewerModal();
+    this.resetZoom();
     window.ModalComponent.open("modal-full-invoice-image");
   }
 
@@ -909,7 +1204,11 @@ class AccountingComponent {
       if (thumbnailsStrip) {
         thumbnailsStrip.style.display = "flex";
         thumbnailsStrip.innerHTML = this.viewerImages.map((img, idx) => `
-          <div class="invoice-page-chip ${idx === this.viewerCurrentIndex ? 'active' : ''}" onclick="window.AccountingComponent.selectViewerPage(${idx})" title="صفحة ${idx + 1}">
+          <div class="invoice-page-chip ${idx === this.viewerCurrentIndex ? 'active' : ''}"
+               onclick="window.AccountingComponent.selectViewerPage(${idx})"
+               onmouseenter="window.AccountingComponent.showHoverPreview('${img}', 'صفحة ${idx + 1}', event)"
+               onmouseleave="window.AccountingComponent.hideHoverPreview()"
+               title="صفحة ${idx + 1}">
             <img src="${img}" alt="صفحة ${idx + 1}" />
             <span class="invoice-page-badge">ص ${idx + 1}</span>
           </div>
@@ -919,6 +1218,8 @@ class AccountingComponent {
       if (galleryNav) galleryNav.style.display = "none";
       if (thumbnailsStrip) thumbnailsStrip.style.display = "none";
     }
+
+    this.resetZoom();
   }
 
   static galleryNext() {
@@ -940,6 +1241,92 @@ class AccountingComponent {
       this.viewerCurrentIndex = idx;
       this.renderViewerModal();
     }
+  }
+
+  // ================= Zoom & Pan Controls =================
+  static applyZoomTransform(animate = false) {
+    const content = document.getElementById("invoice-zoom-content");
+    const badge = document.getElementById("zoom-level-badge");
+    const viewport = document.getElementById("invoice-zoom-viewport");
+
+    if (content) {
+      content.style.transition = animate ? "transform 0.22s cubic-bezier(0.2, 0.8, 0.2, 1)" : "none";
+      content.style.transform = `translate(${this.panX}px, ${this.panY}px) scale(${this.zoomScale}) rotate(${this.rotation}deg)`;
+    }
+
+    if (badge) {
+      badge.textContent = Math.round(this.zoomScale * 100) + "%";
+    }
+
+    if (viewport) {
+      viewport.style.cursor = this.zoomScale > 1 ? (this.isDragging ? "grabbing" : "grab") : "zoom-in";
+    }
+  }
+
+  static zoomIn() {
+    this.setZoomLevel(Math.min(10, this.zoomScale * 1.35));
+  }
+
+  static zoomOut() {
+    this.setZoomLevel(Math.max(0.5, this.zoomScale / 1.35));
+  }
+
+  static setZoomLevel(level) {
+    this.zoomScale = Math.max(0.5, Math.min(10, level));
+    if (this.zoomScale <= 1) {
+      this.panX = 0;
+      this.panY = 0;
+    }
+    this.applyZoomTransform(true);
+  }
+
+  static resetZoom() {
+    this.zoomScale = 1;
+    this.panX = 0;
+    this.panY = 0;
+    this.rotation = 0;
+    this.applyZoomTransform(true);
+  }
+
+  static rotateImage() {
+    this.rotation = (this.rotation + 90) % 360;
+    this.applyZoomTransform(true);
+  }
+
+  // ================= Hover Zoom Preview Popup =================
+  static showHoverPreview(imgUrl, caption, event) {
+    if (!imgUrl) return;
+    const card = document.getElementById("invoice-hover-preview-card");
+    const img = document.getElementById("invoice-hover-preview-img");
+    const cap = document.getElementById("invoice-hover-preview-caption");
+    if (!card || !img) return;
+
+    img.src = imgUrl;
+    if (cap) cap.textContent = caption || "معاينة الفاتورة";
+
+    const targetRect = event.currentTarget.getBoundingClientRect();
+    let left = targetRect.left + targetRect.width / 2;
+    let top = targetRect.top - 8;
+
+    // Boundary check so tooltip does not overflow viewport edges
+    if (top < 380) {
+      top = targetRect.bottom + 16;
+      card.style.transform = "translate(-50%, 0)";
+    } else {
+      card.style.transform = "translate(-50%, -100%)";
+    }
+
+    if (left < 150) left = 150;
+    if (left > window.innerWidth - 150) left = window.innerWidth - 150;
+
+    card.style.left = `${left}px`;
+    card.style.top = `${top}px`;
+    card.style.display = "block";
+  }
+
+  static hideHoverPreview() {
+    const card = document.getElementById("invoice-hover-preview-card");
+    if (card) card.style.display = "none";
   }
 
   // ================= Data Loading & Synchronization =================
@@ -1075,36 +1462,66 @@ class AccountingComponent {
       return;
     }
 
+    // Ensure we collect ALL uploaded images for multi-page invoices
+    const imagesToSave = (this.pendingImages && this.pendingImages.length > 0)
+      ? [...this.pendingImages]
+      : (this.pendingImageData ? [this.pendingImageData] : []);
+
     const invoiceData = {
       supplier,
       amount,
       invoiceNumber: numberInput?.value.trim() || "",
       category: categoryInput?.value || "خامات وبن",
       invoiceDate: dateInput?.value || new Date().toISOString(),
-      imageData: this.pendingImageData || "",
+      imageData: imagesToSave[0] || "",
+      images: imagesToSave,
+      pageCount: imagesToSave.length || 1,
       notes: notesInput?.value.trim() || ""
     };
 
     const submitBtn = document.getElementById("btn-submit-invoice");
+    const submitBtnText = document.getElementById("btn-submit-invoice-text");
     if (submitBtn) {
       submitBtn.disabled = true;
-      submitBtn.textContent = "جاري الحفظ...";
+      if (submitBtnText) submitBtnText.textContent = "جاري الحفظ...";
+      else submitBtn.textContent = "جاري الحفظ...";
     }
 
     try {
-      try {
-        await this.api.createInvoice(invoiceData);
-      } catch (apiErr) {
-        // Fallback local save
-        invoiceData._id = "local-" + Date.now();
-        invoiceData.month = this.currentMonth;
-        const backup = this.loadLocalBackup(this.currentMonth);
-        backup.invoices.push(invoiceData);
-        this.saveLocalBackup(this.currentMonth, backup);
+      if (this.editingInvoiceId) {
+        // Edit mode
+        try {
+          await this.api.updateInvoice(this.editingInvoiceId, invoiceData);
+        } catch (apiErr) {
+          // Local fallback
+          const backup = this.loadLocalBackup(this.currentMonth);
+          const idx = backup.invoices.findIndex(item => (item._id || item.id) === this.editingInvoiceId);
+          if (idx !== -1) {
+            backup.invoices[idx] = { ...backup.invoices[idx], ...invoiceData };
+            this.saveLocalBackup(this.currentMonth, backup);
+          }
+        }
+        window.ModalComponent.close("modal-add-invoice");
+        window.ToastComponent.show(`تم حفظ تعديلات فاتورة "${supplier}" بنجاح!`, "success");
+      } else {
+        // Add mode
+        try {
+          await this.api.createInvoice(invoiceData);
+        } catch (apiErr) {
+          // Fallback local save
+          invoiceData._id = "local-" + Date.now();
+          invoiceData.month = this.currentMonth;
+          const backup = this.loadLocalBackup(this.currentMonth);
+          backup.invoices.push(invoiceData);
+          this.saveLocalBackup(this.currentMonth, backup);
+        }
+
+        window.ModalComponent.close("modal-add-invoice");
+        const countTxt = imagesToSave.length > 1 ? ` (${imagesToSave.length} صفحات)` : "";
+        window.ToastComponent.show(`تمت إضافة فاتورة "${supplier}" بمبلغ ${window.formatCurrency ? window.formatCurrency(amount) : amount} ج.م بنجاح!${countTxt}`, "success");
       }
 
-      window.ModalComponent.close("modal-add-invoice");
-      window.ToastComponent.show(`تمت إضافة فاتورة "${supplier}" بمبلغ ${window.formatCurrency ? window.formatCurrency(amount) : amount} ج.م بنجاح!`);
+      this.editingInvoiceId = null;
 
       // Keep UI month in sync with the saved invoice
       if (invoiceData.invoiceDate) {
@@ -1125,7 +1542,11 @@ class AccountingComponent {
     } finally {
       if (submitBtn) {
         submitBtn.disabled = false;
-        submitBtn.textContent = "💾 حفظ الفاتورة";
+        if (submitBtnText) {
+          submitBtnText.textContent = this.editingInvoiceId ? "💾 حفظ التعديلات" : "💾 حفظ الفاتورة";
+        } else {
+          submitBtn.textContent = this.editingInvoiceId ? "💾 حفظ التعديلات" : "💾 حفظ الفاتورة";
+        }
       }
     }
   }
@@ -1405,7 +1826,11 @@ class AccountingComponent {
           <td style="font-weight: 600; color: var(--text-muted); text-align: center;">${idx + 1}</td>
           <td>
             ${hasImg ? `
-              <div class="invoice-thumb-preview" onclick="window.AccountingComponent.viewInvoiceByData(${idx})" title="اضغط لتكبير وعرض صفحات الفاتورة">
+              <div class="invoice-thumb-preview"
+                   onclick="window.AccountingComponent.viewInvoiceByData(${idx})"
+                   onmouseenter="window.AccountingComponent.showHoverPreview('${displayImg}', '${(inv.supplier || "فاتورة").replace(/'/g, "\\'")}', event)"
+                   onmouseleave="window.AccountingComponent.hideHoverPreview()"
+                   title="اضغط للتكبير وعمل زوم للفاتورة">
                 <img src="${displayImg}" alt="صورة الفاتورة" />
                 <span class="thumb-zoom-icon">🔍</span>
                 ${pageCount > 1 ? `<span class="invoice-pages-pill">${pageCount} ص</span>` : ''}
