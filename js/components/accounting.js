@@ -521,17 +521,42 @@ class AccountingComponent {
 
         const itemsSubtotal = items.reduce((s, it) => s + it.totalPrice, 0);
         const itemsTaxInclSum = items.reduce((s, it) => s + it.taxIncluded, 0);
-        const untaxedSubtotal = Number(parsed.untaxedSubtotal || parsed.subtotal) || parseFloat(itemsSubtotal.toFixed(2));
-        const grandTotal = Number(parsed.grandTotal || parsed.amount) || parseFloat(itemsTaxInclSum.toFixed(2));
-        
+
+        // Ground truth: When items are extracted, their exact mathematical sum is the true audited invoice total
+        const untaxedSubtotal = items.length > 0
+          ? parseFloat(itemsSubtotal.toFixed(2))
+          : (Number(parsed.untaxedSubtotal || parsed.subtotal) || 0);
+
+        const grandTotal = items.length > 0
+          ? parseFloat(itemsTaxInclSum.toFixed(2))
+          : (Number(parsed.grandTotal || parsed.amount) || 0);
+
         // Strict dynamic taxes from invoice
         const rawVat14 = Number(parsed.vat14) || 0;
         const rawSchedule5 = Number(parsed.schedule5) || 0;
         const hasVat14 = Boolean(parsed.hasVat14 || rawVat14 > 0);
         const hasSchedule5 = Boolean(parsed.hasSchedule5 || rawSchedule5 > 0);
-        const vat14 = hasVat14 ? parseFloat(rawVat14.toFixed(2)) : 0;
-        const schedule5 = hasSchedule5 ? parseFloat(rawSchedule5.toFixed(2)) : 0;
-        const taxAmount = Number(parsed.taxAmount) || parseFloat((grandTotal - untaxedSubtotal).toFixed(2));
+        let vat14 = hasVat14 ? parseFloat(rawVat14.toFixed(2)) : 0;
+        let schedule5 = hasSchedule5 ? parseFloat(rawSchedule5.toFixed(2)) : 0;
+        const taxAmount = parseFloat((grandTotal - untaxedSubtotal).toFixed(2));
+
+        // If items-level taxes exist and differ from partial footer, align tax breakdown with items
+        if (items.length > 0 && Math.abs((vat14 + schedule5) - taxAmount) > 0.05) {
+          let v14 = 0;
+          let s5 = 0;
+          items.forEach(it => {
+            const itemTax = it.taxIncluded - it.totalPrice;
+            if (itemTax > 0) {
+              const t = String(it.taxType || "").toUpperCase();
+              if (t.includes("14") || t.includes("VAT")) v14 += itemTax;
+              else if (t.includes("5") || t.includes("SCHD")) s5 += itemTax;
+            }
+          });
+          if (v14 > 0 || s5 > 0) {
+            vat14 = parseFloat(v14.toFixed(2));
+            schedule5 = parseFloat(s5.toFixed(2));
+          }
+        }
 
         const pageGroups = {};
         items.forEach(it => {
@@ -588,7 +613,7 @@ class AccountingComponent {
   /**
    * Cancel ongoing AI scan
    */
-    static cancelAiScan() {
+  static cancelAiScan() {
     if (this.activeScanAbortController) {
       try {
         this.activeScanAbortController.abort();
@@ -716,7 +741,7 @@ class AccountingComponent {
         if (statusMsg) {
           statusMsg.style.color = "var(--color-emerald)";
           const pageInfo = pageCount > 1 ? ` (${pageCount} صفحات)` : "";
-          statusMsg.innerHTML = `✅ تم استخراج وحساب الفاتورة${pageInfo} بنجاح: مورد "<strong>${d.supplier}</strong>" بإجمالي شامل <strong>${d.amount} ج.م</strong>.`;
+          statusMsg.innerHTML = `✅ تم استخراج وحساب الفاتورة${pageInfo} بنجاح: مورد "<strong>${d.supplier}</strong>" بإجمالي شامل <strong>${Number(d.amount).toFixed(2)} ج.م</strong>.`;
         }
 
         window.ToastComponent.show(`✨ تم استخراج وحساب الفاتورة بنجاح: ${d.amount} ج.م`, "success");
@@ -1026,11 +1051,53 @@ class AccountingComponent {
     if (!container) return;
 
     this.scannedAuditData = d;
-    const subtotal = Number(d.subtotal || 0);
-    const taxAmount = Number(d.taxAmount || 0);
-    const vat14 = Number(d.taxDetails?.vat14 || 0);
-    const schedule5 = Number(d.taxDetails?.schedule5 || 0);
-    const amount = Number(d.amount || 0);
+    const items = Array.isArray(d.items) ? d.items : [];
+    const itemsSubtotal = items.reduce((s, it) => s + Number(it.totalPrice || (it.quantity * it.unitPrice) || 0), 0);
+    const itemsTaxInclSum = items.reduce((s, it) => {
+      const explicit = Number(it.taxIncluded);
+      if (explicit && !isNaN(explicit)) return s + explicit;
+      const base = Number(it.totalPrice || (it.quantity * it.unitPrice) || 0);
+      let rate = 0;
+      if (it.taxType) {
+        const m = String(it.taxType).match(/(\d+(?:\.\d+)?)\s*%/);
+        if (m) rate = parseFloat(m[1]) / 100;
+        else if (it.taxType.includes("VAT")) rate = 0.14;
+        else if (it.taxType.includes("SCHD")) rate = 0.05;
+      }
+      return s + (base * (1 + rate));
+    }, 0);
+
+    // Exact mathematical truth from the detected items
+    const subtotal = items.length > 0 ? parseFloat(itemsSubtotal.toFixed(2)) : Number(d.subtotal || 0);
+    const amount = items.length > 0 ? parseFloat(itemsTaxInclSum.toFixed(2)) : Number(d.amount || 0);
+    const taxAmount = parseFloat((amount - subtotal).toFixed(2));
+
+    d.subtotal = subtotal;
+    d.amount = amount;
+    d.taxAmount = taxAmount;
+
+    let vat14 = Number(d.taxDetails?.vat14 || 0);
+    let schedule5 = Number(d.taxDetails?.schedule5 || 0);
+
+    if (items.length > 0 && Math.abs((vat14 + schedule5) - taxAmount) > 0.05) {
+      let v14 = 0;
+      let s5 = 0;
+      items.forEach(it => {
+        const base = Number(it.totalPrice || (it.quantity * it.unitPrice) || 0);
+        const explicit = Number(it.taxIncluded);
+        const incl = (explicit && !isNaN(explicit)) ? explicit : base;
+        const itemTax = incl - base;
+        if (itemTax > 0) {
+          const t = String(it.taxType || "").toUpperCase();
+          if (t.includes("14") || t.includes("VAT")) v14 += itemTax;
+          else if (t.includes("5") || t.includes("SCHD")) s5 += itemTax;
+        }
+      });
+      if (v14 > 0 || s5 > 0) {
+        vat14 = parseFloat(v14.toFixed(2));
+        schedule5 = parseFloat(s5.toFixed(2));
+      }
+    }
 
     const pagesHtml = Array.isArray(d.pageBreakdown) && d.pageBreakdown.length > 1
       ? `<div class="ai-pages-breakdown-row">
@@ -1061,23 +1128,38 @@ class AccountingComponent {
                 </tr>
               </thead>
               <tbody>
-                ${d.items.map(it => `
-                  <tr>
-                    <td style="color: var(--text-muted); font-size: 0.68rem; text-align: center;">${it.page || 1}</td>
-                    <td style="font-weight: 600;">${it.name || "صنف"}</td>
-                    <td style="font-family: 'Outfit', sans-serif; text-align: center;">${it.quantity || 1}</td>
-                    <td style="font-family: 'Outfit', sans-serif; text-align: center;">${Number(it.unitPrice || it.price || 0).toFixed(2)}</td>
-                    <td style="text-align: center;"><span style="font-size: 0.65rem; background: rgba(245,158,11,0.12); color: var(--accent-gold); padding: 1px 4px; border-radius: 3px;">${it.taxType || "SCHD 5%"}</span></td>
-                    <td style="font-family: 'Outfit', sans-serif; text-align: center; color: var(--text-secondary);">${Number(it.totalPrice || it.total || (it.quantity * it.unitPrice) || 0).toFixed(2)}</td>
-                    <td style="font-weight: 800; color: var(--accent-gold); font-family: 'Outfit', sans-serif; text-align: left;">${Number(it.taxIncluded || (it.totalPrice * 1.05) || 0).toFixed(2)}</td>
-                  </tr>
-                `).join("")}
+                ${items.map(it => {
+                  const baseTot = Number(it.totalPrice || it.total || (it.quantity * it.unitPrice) || 0);
+                  const explicit = Number(it.taxIncluded);
+                  let rate = 0;
+                  if (it.taxType) {
+                    const m = String(it.taxType).match(/(\d+(?:\.\d+)?)\s*%/);
+                    if (m) rate = parseFloat(m[1]) / 100;
+                    else if (it.taxType.includes("VAT")) rate = 0.14;
+                    else if (it.taxType.includes("SCHD")) rate = 0.05;
+                  }
+                  const incl = (explicit && !isNaN(explicit) && (!rate || Math.abs(explicit - baseTot) >= 0.01))
+                    ? explicit
+                    : (baseTot * (1 + rate));
+
+                  return `
+                    <tr>
+                      <td style="color: var(--text-muted); font-size: 0.68rem; text-align: center;">${it.page || 1}</td>
+                      <td style="font-weight: 600;">${it.name || "صنف"}</td>
+                      <td style="font-family: 'Outfit', sans-serif; text-align: center;">${it.quantity || 1}</td>
+                      <td style="font-family: 'Outfit', sans-serif; text-align: center;">${Number(it.unitPrice || it.price || 0).toFixed(2)}</td>
+                      <td style="text-align: center;"><span style="font-size: 0.65rem; background: rgba(245,158,11,0.12); color: var(--accent-gold); padding: 1px 4px; border-radius: 3px;">${it.taxType || "—"}</span></td>
+                      <td style="font-family: 'Outfit', sans-serif; text-align: center; color: var(--text-secondary);">${baseTot.toFixed(2)}</td>
+                      <td style="font-weight: 800; color: var(--accent-gold); font-family: 'Outfit', sans-serif; text-align: left;">${incl.toFixed(2)}</td>
+                    </tr>
+                  `;
+                }).join("")}
               </tbody>
               <tfoot>
                 <tr style="background: rgba(255,255,255,0.06); font-weight: 800;">
                   <td colspan="5" style="text-align: right; color: var(--accent-gold); padding: 0.35rem 0.5rem;">إجمالي الأصناف المكتشفة:</td>
-                  <td style="font-family: 'Outfit', sans-serif; text-align: center; color: var(--text-primary);">${d.items.reduce((s, it) => s + Number(it.totalPrice || (it.quantity * it.unitPrice) || 0), 0).toFixed(2)}</td>
-                  <td style="font-family: 'Outfit', sans-serif; text-align: left; color: var(--accent-gold);">${d.items.reduce((s, it) => s + Number(it.taxIncluded || (it.totalPrice * 1.05) || 0), 0).toFixed(2)} ج.م</td>
+                  <td style="font-family: 'Outfit', sans-serif; text-align: center; color: var(--text-primary);">${subtotal.toFixed(2)}</td>
+                  <td style="font-family: 'Outfit', sans-serif; text-align: left; color: var(--accent-gold);">${amount.toFixed(2)} ج.م</td>
                 </tr>
               </tfoot>
             </table>
@@ -1436,11 +1518,47 @@ class AccountingComponent {
       ? allItems
       : allItems.filter(it => (it.page || 1) === Number(filter));
 
-    const subtotal = Number(inv.subtotal || 0);
-    const vat14 = Number(inv.taxDetails?.vat14 || 0);
-    const schedule5 = Number(inv.taxDetails?.schedule5 || 0);
-    const taxAmount = Number(inv.taxAmount || (vat14 + schedule5));
-    const amount = Number(inv.amount || (subtotal + taxAmount));
+    const allItemsSubtotal = allItems.reduce((s, it) => s + Number(it.totalPrice || (it.quantity * it.unitPrice) || 0), 0);
+    const allItemsTaxInclSum = allItems.reduce((s, it) => {
+      const explicit = Number(it.taxIncluded);
+      if (explicit && !isNaN(explicit)) return s + explicit;
+      const base = Number(it.totalPrice || (it.quantity * it.unitPrice) || 0);
+      let rate = 0;
+      if (it.taxType) {
+        const m = String(it.taxType).match(/(\d+(?:\.\d+)?)\s*%/);
+        if (m) rate = parseFloat(m[1]) / 100;
+        else if (it.taxType.includes("VAT")) rate = 0.14;
+        else if (it.taxType.includes("SCHD")) rate = 0.05;
+      }
+      return s + (base * (1 + rate));
+    }, 0);
+
+    const subtotal = allItems.length > 0 ? parseFloat(allItemsSubtotal.toFixed(2)) : Number(inv.subtotal || 0);
+    const amount = allItems.length > 0 ? parseFloat(allItemsTaxInclSum.toFixed(2)) : Number(inv.amount || 0);
+    const taxAmount = parseFloat((amount - subtotal).toFixed(2));
+
+    let vat14 = Number(inv.taxDetails?.vat14 || 0);
+    let schedule5 = Number(inv.taxDetails?.schedule5 || 0);
+
+    if (allItems.length > 0 && Math.abs((vat14 + schedule5) - taxAmount) > 0.05) {
+      let v14 = 0;
+      let s5 = 0;
+      allItems.forEach(it => {
+        const base = Number(it.totalPrice || (it.quantity * it.unitPrice) || 0);
+        const explicit = Number(it.taxIncluded);
+        const incl = (explicit && !isNaN(explicit)) ? explicit : base;
+        const itemTax = incl - base;
+        if (itemTax > 0) {
+          const t = String(it.taxType || "").toUpperCase();
+          if (t.includes("14") || t.includes("VAT")) v14 += itemTax;
+          else if (t.includes("5") || t.includes("SCHD")) s5 += itemTax;
+        }
+      });
+      if (v14 > 0 || s5 > 0) {
+        vat14 = parseFloat(v14.toFixed(2));
+        schedule5 = parseFloat(s5.toFixed(2));
+      }
+    }
 
     const filteredSubtotal = filteredItems.reduce((s, it) => s + Number(it.totalPrice || (it.quantity * it.unitPrice) || 0), 0);
     const filteredTaxIncl = filteredItems.reduce((s, it) => {
@@ -1528,19 +1646,19 @@ class AccountingComponent {
           </thead>
           <tbody>
             ${filteredItems.length > 0 ? filteredItems.map((it, idx) => {
-              const baseTot = Number(it.totalPrice || it.total || (it.quantity * it.unitPrice) || 0);
-              let rate = 0;
-              if (it.taxType) {
-                const m = String(it.taxType).match(/(\d+(?:\.\d+)?)\s*%/);
-                if (m) rate = parseFloat(m[1]) / 100;
-                else if (it.taxType.includes("VAT")) rate = 0.14;
-                else if (it.taxType.includes("SCHD")) rate = 0.05;
-              }
-              const incl = Number(it.taxIncluded) && !isNaN(Number(it.taxIncluded))
-                ? Number(it.taxIncluded)
-                : (baseTot * (1 + rate));
+      const baseTot = Number(it.totalPrice || it.total || (it.quantity * it.unitPrice) || 0);
+      let rate = 0;
+      if (it.taxType) {
+        const m = String(it.taxType).match(/(\d+(?:\.\d+)?)\s*%/);
+        if (m) rate = parseFloat(m[1]) / 100;
+        else if (it.taxType.includes("VAT")) rate = 0.14;
+        else if (it.taxType.includes("SCHD")) rate = 0.05;
+      }
+      const incl = Number(it.taxIncluded) && !isNaN(Number(it.taxIncluded))
+        ? Number(it.taxIncluded)
+        : (baseTot * (1 + rate));
 
-              return `
+      return `
                 <tr>
                   <td style="text-align: center; color: var(--text-muted); font-size: 0.72rem;">${idx + 1}</td>
                   ${totalPages > 1 ? `<td style="text-align: center; font-size: 0.72rem; color: var(--accent-gold);">ص ${it.page || 1}</td>` : ''}
@@ -1556,7 +1674,7 @@ class AccountingComponent {
                   <td class="total" style="text-align: left;">${incl.toFixed(2)} <small style="font-size: 0.65rem; color: var(--text-muted);">ج.م</small></td>
                 </tr>
               `;
-            }).join("") : `
+    }).join("") : `
               <tr>
                 <td colspan="${totalPages > 1 ? 8 : 7}" style="text-align: center; padding: 1.5rem; color: var(--text-muted);">
                   لا توجد أصناف في الصفحة المحددة.
@@ -1680,7 +1798,7 @@ class AccountingComponent {
     }
   }
 
-    // ================= Zoom & Pan Controls =================
+  // ================= Zoom & Pan Controls =================
   static applyZoomTransform(animate = false) {
     const content = document.getElementById("invoice-zoom-content");
     const badge = document.getElementById("zoom-level-badge");
