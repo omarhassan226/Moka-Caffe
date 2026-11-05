@@ -2644,3 +2644,196 @@ body::after {
     grid-template-columns: 1fr;
   }
 }
+
+
+/* ==========================================================================
+   Full Invoice Viewer Tabs & Detected Items Table
+   ========================================================================== */
+.invoice-viewer-modal-content {
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+.viewer-tab-bar {
+  display: flex;
+  gap: 0.4rem;
+  justify-content: center;
+  margin-bottom: 0.65rem;
+  border-bottom: 1px solid var(--border-color);
+  padding-bottom: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.viewer-tab-btn {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  color: var(--text-secondary);
+  padding: 0.35rem 0.8rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  border-radius: var(--radius-full);
+  cursor: pointer;
+  transition: var(--transition);
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.viewer-tab-btn:hover {
+  color: var(--text-primary);
+  border-color: var(--accent-gold);
+}
+
+.viewer-tab-btn.active {
+  background: var(--accent-gold);
+  color: #0b0f19;
+  border-color: var(--accent-gold);
+}
+
+.viewer-split-container {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  width: 100%;
+}
+
+.viewer-split-container.split-mode {
+  display: grid;
+  grid-template-columns: 1fr 1.15fr;
+  gap: 1rem;
+}
+
+@media (max-width: 960px) {
+  .viewer-split-container.split-mode {
+    display: flex !important;
+    flex-direction: column !important;
+  }
+}
+
+.viewer-items-pane {
+  background: rgba(15, 23, 42, 0.75);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: 0.85rem;
+  overflow-y: auto;
+  box-sizing: border-box;
+  text-align: right;
+  direction: rtl;
+}
+
+.viewer-financial-strip {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0.45rem;
+  margin-bottom: 0.75rem;
+}
+
+@media (max-width: 600px) {
+  .viewer-financial-strip {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+.viewer-stat-box {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  padding: 0.45rem 0.5rem;
+  text-align: center;
+}
+
+.viewer-stat-box.featured {
+  border-color: rgba(245, 158, 11, 0.4);
+  background: rgba(245, 158, 11, 0.08);
+}
+
+.viewer-stat-box-title {
+  font-size: 0.68rem;
+  color: var(--text-muted);
+  margin-bottom: 0.15rem;
+}
+
+.viewer-stat-box-val {
+  font-size: 0.95rem;
+  font-weight: 800;
+  font-family: 'Outfit', sans-serif;
+  color: var(--text-primary);
+}
+
+.viewer-stat-box.featured .viewer-stat-box-val {
+  color: var(--accent-gold);
+}
+
+.viewer-page-filter-bar {
+  display: flex;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-bottom: 0.65rem;
+  padding-bottom: 0.45rem;
+  border-bottom: 1px dashed rgba(255, 255, 255, 0.08);
+}
+
+.viewer-page-filter-btn {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-full);
+  padding: 0.2rem 0.6rem;
+  font-size: 0.72rem;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: var(--transition);
+}
+
+.viewer-page-filter-btn:hover,
+.viewer-page-filter-btn.active {
+  background: var(--accent-gold);
+  color: #0b0f19;
+  border-color: var(--accent-gold);
+  font-weight: 700;
+}
+
+.viewer-items-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8rem;
+}
+
+.viewer-items-table th,
+.viewer-items-table td {
+  padding: 0.45rem 0.6rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+  text-align: right;
+}
+
+.viewer-items-table th {
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-muted);
+  font-size: 0.74rem;
+  font-weight: 600;
+}
+
+.viewer-items-table tbody tr:hover {
+  background: rgba(245, 158, 11, 0.04);
+}
+
+.viewer-items-table td.num {
+  font-family: 'Outfit', sans-serif;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.viewer-items-table td.total {
+  font-family: 'Outfit', sans-serif;
+  font-weight: 800;
+  color: var(--accent-gold);
+}
+
+.viewer-table-wrapper {
+  flex: 1;
+  overflow-y: auto;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  background: rgba(0, 0, 0, 0.25);
+  max-height: 480px;
+}

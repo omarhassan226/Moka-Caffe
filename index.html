@@ -1075,13 +1075,13 @@ West
     </div>
   </div>
 
-  <!-- Modal: Full Screen Invoice Image Viewer with High-Degree Zoom & Pan -->
+  <!-- Modal: Full Screen Invoice Image Viewer with High-Degree Zoom & Pan & Detected Items Table -->
   <div class="modal-overlay" id="modal-full-invoice-image" role="dialog" aria-modal="true">
-    <div class="modal-content" style="max-width: 95vw; width: 1000px; max-height: 94vh; background: rgba(11, 15, 25, 0.96); text-align: center; padding: 1rem; display: flex; flex-direction: column;">
-      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+    <div class="modal-content invoice-viewer-modal-content" style="max-width: 96vw; width: 1200px; max-height: 95vh; background: rgba(11, 15, 25, 0.97); text-align: center; padding: 1rem; display: flex; flex-direction: column;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; flex-wrap: wrap; gap: 0.5rem;">
         <h3 id="full-invoice-modal-title" style="font-weight: 700; color: var(--accent-gold); font-size: 1.1rem; display: flex; align-items: center; gap: 0.5rem; margin: 0;">
           <span>🔍</span>
-          <span>صورة الفاتورة</span>
+          <span id="full-invoice-modal-title-text">صورة الفاتورة وتدقيق الأصناف</span>
         </h3>
         <div style="display: flex; gap: 0.5rem; align-items: center;">
           <a id="btn-download-full-invoice" class="btn btn-secondary" style="font-size: 0.8rem; padding: 0.35rem 0.75rem;" download="فاتورة.jpg">
@@ -1091,37 +1091,64 @@ West
         </div>
       </div>
 
-      <!-- Multi-Page Navigation Bar -->
-      <div id="full-invoice-gallery-nav" class="invoice-gallery-nav" style="display: none; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; background: rgba(255,255,255,0.03); padding: 0.35rem 0.75rem; border-radius: var(--radius-sm); border: 1px solid var(--border-color);">
-        <button type="button" class="invoice-gallery-btn" id="btn-gallery-prev" onclick="window.AccountingComponent.galleryPrev()">❮ الصفحة السابقة</button>
-        <span id="full-invoice-gallery-counter" style="font-weight: 700; color: var(--accent-gold); font-size: 0.9rem;">صفحة 1 من 1</span>
-        <button type="button" class="invoice-gallery-btn" id="btn-gallery-next" onclick="window.AccountingComponent.galleryNext()">الصفحة التالية ❯</button>
+      <!-- Viewer Tab Bar: Split Mode vs Image View vs Items Table View -->
+      <div class="viewer-tab-bar" id="viewer-tab-bar">
+        <button type="button" class="viewer-tab-btn active" id="btn-viewer-tab-split" onclick="window.AccountingComponent.switchViewerTab('split')">
+          <span>◫</span>
+          <span>عرض مقسم (الصورة + جدول الأصناف)</span>
+        </button>
+        <button type="button" class="viewer-tab-btn" id="btn-viewer-tab-image" onclick="window.AccountingComponent.switchViewerTab('image')">
+          <span>🔍</span>
+          <span>صورة الفاتورة وزوم التفاصيل (10x)</span>
+        </button>
+        <button type="button" class="viewer-tab-btn" id="btn-viewer-tab-items" onclick="window.AccountingComponent.switchViewerTab('items')">
+          <span>📋</span>
+          <span>جدول الأصناف المستخرجة (<span id="viewer-items-count-badge">0 صنف</span>)</span>
+        </button>
       </div>
 
-      <!-- High-Precision Zoom & Pan Viewport -->
-      <div id="invoice-zoom-viewport" class="invoice-zoom-viewport">
-        <div class="zoom-hint-pill" id="zoom-hint-pill">
-          💡 عجلة الماوس للزوم (حتى 10x) • اسحب للتحريك • نقر مزدوج للتكبير الفوري
+      <!-- Main Viewer Content Container -->
+      <div id="viewer-main-container" class="viewer-split-container split-mode" style="flex: 1; min-height: 0; overflow: hidden;">
+        <!-- Pane 1: Image & High-Precision Zoom -->
+        <div id="viewer-image-pane" style="display: flex; flex-direction: column; min-height: 0; flex: 1;">
+          <!-- Multi-Page Navigation Bar -->
+          <div id="full-invoice-gallery-nav" class="invoice-gallery-nav" style="display: none; justify-content: space-between; align-items: center; margin-bottom: 0.4rem; background: rgba(255,255,255,0.03); padding: 0.3rem 0.65rem; border-radius: var(--radius-sm); border: 1px solid var(--border-color);">
+            <button type="button" class="invoice-gallery-btn" id="btn-gallery-prev" onclick="window.AccountingComponent.galleryPrev()">❮ الصفحة السابقة</button>
+            <span id="full-invoice-gallery-counter" style="font-weight: 700; color: var(--accent-gold); font-size: 0.85rem;">صفحة 1 من 1</span>
+            <button type="button" class="invoice-gallery-btn" id="btn-gallery-next" onclick="window.AccountingComponent.galleryNext()">الصفحة التالية ❯</button>
+          </div>
+
+          <!-- High-Precision Zoom & Pan Viewport -->
+          <div id="invoice-zoom-viewport" class="invoice-zoom-viewport" style="flex: 1; min-height: 380px;">
+            <div class="zoom-hint-pill" id="zoom-hint-pill">
+              💡 عجلة الماوس للزوم (حتى 10x) • اسحب للتحريك • نقر مزدوج للتكبير
+            </div>
+
+            <div id="invoice-zoom-content" class="invoice-zoom-content">
+              <img id="full-invoice-modal-image" src="" alt="صورة الفاتورة بالحجم الكامل" />
+            </div>
+
+            <!-- Floating Zoom HUD Controls -->
+            <div class="zoom-hud-bar">
+              <button type="button" class="zoom-hud-btn" onclick="window.AccountingComponent.zoomIn()" title="تكبير (+)">➕ تكبير</button>
+              <span id="zoom-level-badge" class="zoom-level-badge">100%</span>
+              <button type="button" class="zoom-hud-btn" onclick="window.AccountingComponent.zoomOut()" title="تصغير (-)">➖ تصغير</button>
+              <button type="button" class="zoom-hud-btn" onclick="window.AccountingComponent.setZoomLevel(3)" title="زوم تفاصيل 300%">🔎 3x</button>
+              <button type="button" class="zoom-hud-btn" onclick="window.AccountingComponent.setZoomLevel(6)" title="أقصى زوم 600%">⚡ 6x</button>
+              <button type="button" class="zoom-hud-btn" onclick="window.AccountingComponent.resetZoom()" title="إعادة ضبط (Fit)">🔄 ضبط</button>
+              <button type="button" class="zoom-hud-btn" onclick="window.AccountingComponent.rotateImage()" title="تدوير الصورة 90°">↷ تدوير</button>
+            </div>
+          </div>
+
+          <!-- Gallery Thumbnails Strip -->
+          <div id="full-invoice-thumbnails-strip" class="invoice-pages-strip" style="display: none; justify-content: center; margin-top: 0.4rem;"></div>
         </div>
 
-        <div id="invoice-zoom-content" class="invoice-zoom-content">
-          <img id="full-invoice-modal-image" src="" alt="صورة الفاتورة بالحجم الكامل" />
-        </div>
-
-        <!-- Floating Zoom HUD Controls -->
-        <div class="zoom-hud-bar">
-          <button type="button" class="zoom-hud-btn" onclick="window.AccountingComponent.zoomIn()" title="تكبير (+)">➕ تكبير</button>
-          <span id="zoom-level-badge" class="zoom-level-badge">100%</span>
-          <button type="button" class="zoom-hud-btn" onclick="window.AccountingComponent.zoomOut()" title="تصغير (-)">➖ تصغير</button>
-          <button type="button" class="zoom-hud-btn" onclick="window.AccountingComponent.setZoomLevel(3)" title="زوم تفاصيل 300%">🔎 3x</button>
-          <button type="button" class="zoom-hud-btn" onclick="window.AccountingComponent.setZoomLevel(6)" title="أقصى زوم 600%">⚡ 6x</button>
-          <button type="button" class="zoom-hud-btn" onclick="window.AccountingComponent.resetZoom()" title="إعادة ضبط (Fit)">🔄 ضبط</button>
-          <button type="button" class="zoom-hud-btn" onclick="window.AccountingComponent.rotateImage()" title="تدوير الصورة 90°">↷ تدوير</button>
+        <!-- Pane 2: Detected Items Table & Tax Details -->
+        <div id="viewer-items-pane" class="viewer-items-pane" style="display: flex; flex-direction: column; min-height: 0; flex: 1.15;">
+          <!-- Dynamically filled by renderViewerItemsTable() -->
         </div>
       </div>
-
-      <!-- Gallery Thumbnails Strip -->
-      <div id="full-invoice-thumbnails-strip" class="invoice-pages-strip" style="display: none; justify-content: center; margin-top: 0.5rem;"></div>
     </div>
   </div>
 

@@ -369,127 +369,190 @@ class AccountingComponent {
    * Supports multi-image invoices (up to 10+ pages)
    */
   static async scanWithGeminiDirect(imagesInput, apiKey, signal) {
-        const imagesList = Array.isArray(imagesInput) && imagesInput.length > 0
-          ? imagesInput
-          : (imagesInput ? [imagesInput] : []);
+    const imagesList = Array.isArray(imagesInput) && imagesInput.length > 0
+      ? imagesInput
+      : (imagesInput ? [imagesInput] : []);
 
-        if(imagesList.length === 0) {
-        throw new Error("لم يتم إرفاق أي صورة للفاتورة");
+    if (imagesList.length === 0) {
+      throw new Error("لم يتم إرفاق أي صورة للفاتورة");
+    }
+
+    const imageParts = imagesList.map((imgStr) => {
+      let mimeType = "image/jpeg";
+      let base64Data = imgStr;
+      const match = imgStr.match(/^data:([^;]+);base64,(.+)$/);
+      if (match) {
+        mimeType = match[1];
+        base64Data = match[2];
       }
+      return { inlineData: { mimeType, data: base64Data } };
+    });
 
-      const imageParts = imagesList.map((imgStr) => {
-        let mimeType = "image/jpeg";
-        let base64Data = imgStr;
-        const match = imgStr.match(/^data:([^;]+);base64,(.+)$/);
-        if (match) {
-          mimeType = match[1];
-          base64Data = match[2];
-        }
-        return { inlineData: { mimeType, data: base64Data } };
-      });
+    const pageCount = imagesList.length;
+    const multiPageInstruction = pageCount > 1
+      ? `\nتنبيه فائق الأهمية: هذه الفاتورة تتكون من (${pageCount}) صفحات مرفقة بالترتيب كصور متعددة لفاتورة واحدة.
+1. راجع جميع الصفحات (${pageCount} صفحات) بالكامل من أول صفحة حتى آخر صفحة.
+2. لكل صنف في الفاتورة: حدد رقم الصفحة التي ورد فيها بدقة (page: 1, 2, 3...) واسمه والكمية وسعر الوحدة والإجمالي.
+3. في أسفل الفاتورة بالصفحة الأخيرة يوجد ملخص الضرائب الرسمي المطبوع: اقرأ منه بدقة تامة:
+   - Untaxed Amount (المجموع قبل الضريبة)
+   - VAT 14% (قيمة ضريبة القيمة المضافة 14%)
+   - Schedule Tax 5% (قيمة ضريبة الجدول 5%)
+   - Total (الإجمالي النهائي الشامل المطلوب سداده)`
+      : `\nتنبيه: اقرأ تفاصيل الأصناف وملخص الضرائب المطبوع في أسفل الفاتورة بدقة تامة.`;
 
-      const pageCount = imagesList.length;
-      const multiPageInstruction = pageCount > 1
-        ? `\nتنبيه هام جداً: هذه الفاتورة تتكون من (${pageCount}) صفحات مرفقة بالترتيب كصور متعددة لفاتورة واحدة.
-1. راجع جميع الصفحات بالكامل من أول صفحة حتى آخر صفحة.
-2. استخرج قائمة الأصناف المشتراة من كافة الصفحات بدقة.
-3. تفصيل الصفحات: حدد المجموع الفرعي لكل صفحة في pageBreakdown.
-4. احتسب المجاميع الحسابية الإجمالية بدقة متناهية:
-   - المبلغ الإجمالي قبل الضريبة (subtotal)
-   - قيمة الضريبة المضافة وضريبة الجدول إن وجدت (taxAmount)
-   - الإجمالي النهائي الشامل المطلوب سداده لكافة الصفحات (amount: Grand Total)`
-        : "";
-
-      const systemPrompt = `أنت مدقق حسابات وخبير محاسبي عالي الدقة في قراءة وتحليل فواتير وإيصالات الكافيهات والمطاعم في مصر.
+    const systemPrompt = `أنت مدقق حسابات وخبير ضرائب مصري عالي الدقة في قراءة وتحليل فواتير وإيصالات الكافيهات والمطاعم في مصر.
 مهمتك استخراج وتدقيق البيانات بدقة حسابية متناهية (100% Accurate OCR):${multiPageInstruction}
 
 قواعد التدقيق الحسابي الإلزامية:
-1. دقة الأرقام والكسور العشرية: انتبه بدقة شديدة للفاصلة العشرية والكسور (مثال: 8,364.75 أو 9,034.09 أو 125.50). لا تتجاهل القروش أو الفواصل.
-2. التفريق الدقيق بين المبالغ:
-   - subtotal: المجموع قبل الضريبة (صافي قيمة البضاعة/الأصناف بدون ضرائب).
-   - taxAmount: إجمالي قيمة الضرائب (ضريبة القيمة المضافة 14% + ضريبة الجدول 5% إن وجدت).
-   - amount: الإجمالي النهائي الشامل لكافة الضرائب والخدمة والمطلوب دفعه (Grand Total).
-3. استخراج تفاصيل الأصناف (items):
-   - اسم الصنف، الكمية، سعر الوحدة، الإجمالي (الكمية × السعر = الإجمالي).
-4. تفصيل الصفحات (pageBreakdown):
-   - رقم كل صفحة والمجموع الخاص بها.
-5. تاريخ الفاتورة ورقمها: استخرج التاريخ الفعلي المطبوع على الفاتورة (YYYY-MM-DD) ورقم الإيصال/الفاتورة.
-6. التصنيف: اختر واحداً فقط من: ["خامات وبن", "ألبان وسيرب", "حلويات ومخبوزات", "تعبئة وتغليف", "نظافة ومستهلكات", "صيانة وتشغيل", "أخرى"].
+1. دقة الأرقام والكسور العشرية: انتبه بدقة شديدة لكل الأرقام والكسور العشرية (مثال: 55.75، 62.35، 8364.75، 9034.09). لا تقرب أو تحذف القروش نهائياً!
+2. استخراج قائمة الأصناف (items):
+   - لكل صنف:
+     * "page": رقم الصفحة المأخوذ منها الصنف (1، 2، 3...)
+     * "name": اسم الصنف كما هو مكتوب
+     * "quantity": الكمية كرقم دقيق
+     * "unitPrice": سعر الوحدة الصافي بالكسور العشرية كرقم
+     * "totalPrice": إجمالي الصنف (الكمية × سعر الوحدة) بالكسور العشرية كرقم
+3. قراءة الملخص المالي والضرائب من أسفل الفاتورة المطبوعة:
+   - untaxedSubtotal: المجموع الصافي للأصناف قبل الضريبة (Untaxed Amount).
+   - vat14: قيمة ضريبة القيمة المضافة 14% المطبوعة إن وجدت.
+   - schedule5: قيمة ضريبة الجدول 5% المطبوعة إن وجدت.
+   - grandTotal: الإجمالي النهائي الشامل المطلوب سداده (Total / Net Amount).
+4. تاريخ الفاتورة ورقمها واسم المورد والتصنيف.
 
 أجب بصيغة JSON حصراً بدون أي نصوص أو markdown codeblocks إضافية:
 {
-  "supplier": "اسم المورد أو الشركة أو المحل",
-  "subtotal": 0.00,
-  "taxAmount": 0.00,
-  "amount": 0.00,
+  "supplier": "اسم المورد أو الشركة",
+  "untaxedSubtotal": 0.00,
+  "vat14": 0.00,
+  "schedule5": 0.00,
+  "grandTotal": 0.00,
   "invoiceDate": "YYYY-MM-DD",
   "invoiceNumber": "",
   "category": "خامات وبن",
-  "items": [{ "name": "اسم الصنف", "quantity": 1, "price": 0.00, "total": 0.00 }],
-  "pageBreakdown": [{ "page": 1, "total": 0.00, "note": "تفاصيل صفحة 1" }],
-  "notes": "ملخص التدقيق الحسابي وتأكيد مطابقة إجمالي الأصناف مع الفاتورة"
-}
-أجب بصيغة JSON صريحة فقط.`;
+  "items": [
+    { "page": 1, "name": "اسم الصنف", "quantity": 1, "unitPrice": 0.00, "totalPrice": 0.00 }
+  ],
+  "notes": "ملخص الفاتورة والضرائب"
+}`;
 
-      const requestPayload = {
-        contents: [{
-          parts: [
-            { text: systemPrompt },
-            ...imageParts
-          ]
-        }],
-        generationConfig: {
-          temperature: 0.1,
-          responseMimeType: "application/json"
-        }
-      };
-
-      const models = [
-        "gemini-3.1-flash-lite",
-        "gemini-flash-lite-latest",
-        "gemini-3.5-flash-lite",
-        "gemini-3.5-flash",
-        "gemini-3.6-flash",
-        "gemini-3.7-flash",
-        "gemini-3.8-flash"
-      ];
-      let lastErr = null;
-
-      for (const model of models) {
-        try {
-          const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            signal,
-            body: JSON.stringify(requestPayload)
-          });
-
-          if (!res.ok) {
-            const t = await res.text();
-            throw new Error(`[${res.status}] ${t}`);
-          }
-
-          const json = await res.json();
-          const candidate = json.candidates?.[0]?.content?.parts?.[0]?.text;
-          if (!candidate) throw new Error("لا توجد استجابة من نموذج الذكاء الاصطناعي");
-
-          let cleanJson = candidate.trim().replace(/^\`\`\`json\s*/, "").replace(/\s*\`\`\`$/, "");
-          const parsed = JSON.parse(cleanJson);
-          return { success: true, data: parsed };
-        } catch (err) {
-          if (err.name === "AbortError") throw err;
-          lastErr = err;
-          console.warn(`Direct model ${model} attempt failed:`, err.message);
-        }
+    const requestPayload = {
+      contents: [{
+        parts: [
+          { text: systemPrompt },
+          ...imageParts
+        ]
+      }],
+      generationConfig: {
+        temperature: 0.1,
+        responseMimeType: "application/json"
       }
+    };
 
-      throw lastErr || new Error("تعذر فحص الفاتورة عبر نماذج الذكاء الاصطناعي");
+    const models = [
+      "gemini-3.1-flash-lite",
+      "gemini-flash-lite-latest",
+      "gemini-3.5-flash-lite",
+      "gemini-3.5-flash",
+      "gemini-3.6-flash",
+      "gemini-3.7-flash",
+      "gemini-3.8-flash"
+    ];
+    let lastErr = null;
+
+    for (const model of models) {
+      try {
+        const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          signal,
+          body: JSON.stringify(requestPayload)
+        });
+
+        if (!res.ok) {
+          const t = await res.text();
+          throw new Error(`[${res.status}] ${t}`);
+        }
+
+        const json = await res.json();
+        const candidate = json.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (!candidate) throw new Error("لا توجد استجابة من نموذج الذكاء الاصطناعي");
+
+        let cleanJson = candidate.trim().replace(/^\`\`\`json\s*/, "").replace(/\s*\`\`\`$/, "");
+        const parsed = JSON.parse(cleanJson);
+
+        // Mathematical Float Post-processing
+        const rawItems = Array.isArray(parsed.items) ? parsed.items : [];
+        const items = rawItems.map((it, i) => {
+          const qty = Number(it.quantity) || 1;
+          const unit = Number(it.unitPrice || it.price) || 0;
+          const tot = Number(it.totalPrice || it.total) || (qty * unit);
+          return {
+            page: Number(it.page) || 1,
+            name: String(it.name || `صنف ${i + 1}`).trim(),
+            quantity: qty,
+            unitPrice: parseFloat(unit.toFixed(2)),
+            totalPrice: parseFloat(tot.toFixed(2))
+          };
+        });
+
+        const itemsSum = items.reduce((s, it) => s + it.totalPrice, 0);
+        const untaxedSubtotal = Number(parsed.untaxedSubtotal || parsed.subtotal) || parseFloat(itemsSum.toFixed(2));
+        const vat14 = Number(parsed.vat14) || 0;
+        const schedule5 = Number(parsed.schedule5) || 0;
+        const taxAmount = Number(parsed.taxAmount) || parseFloat((vat14 + schedule5).toFixed(2));
+        const grandTotal = Number(parsed.grandTotal || parsed.amount) || parseFloat((untaxedSubtotal + taxAmount).toFixed(2));
+
+        const pageGroups = {};
+        items.forEach(it => {
+          const p = it.page || 1;
+          if (!pageGroups[p]) pageGroups[p] = { page: p, subtotal: 0, itemsCount: 0 };
+          pageGroups[p].subtotal += it.totalPrice;
+          pageGroups[p].itemsCount += 1;
+        });
+
+        const pageBreakdown = Object.values(pageGroups).map(g => ({
+          page: g.page,
+          subtotal: parseFloat(g.subtotal.toFixed(2)),
+          total: parseFloat(g.subtotal.toFixed(2)),
+          itemsCount: g.itemsCount,
+          note: `صفحة ${g.page}: ${g.itemsCount} صنف بإجمالي ${g.subtotal.toFixed(2)} ج.م`
+        })).sort((a, b) => a.page - b.page);
+
+        return {
+          success: true,
+          modelUsed: model,
+          pageCount: pageCount,
+          data: {
+            supplier: parsed.supplier || "Moka",
+            subtotal: parseFloat(untaxedSubtotal.toFixed(2)),
+            taxAmount: parseFloat(taxAmount.toFixed(2)),
+            taxDetails: {
+              vat14: parseFloat(vat14.toFixed(2)),
+              schedule5: parseFloat(schedule5.toFixed(2))
+            },
+            amount: parseFloat(grandTotal.toFixed(2)),
+            invoiceDate: parsed.invoiceDate || parsed.date || new Date().toISOString().split("T")[0],
+            invoiceNumber: parsed.invoiceNumber || "",
+            category: parsed.category || "خامات وبن",
+            items: items,
+            pageBreakdown: pageBreakdown,
+            notes: parsed.notes || `فاتورة من ${pageCount} صفحة (${items.length} صنف)`
+          }
+        };
+      } catch (err) {
+        if (err.name === "AbortError") throw err;
+        lastErr = err;
+        console.warn(`Direct model ${model} attempt failed:`, err.message);
+      }
     }
+
+    throw lastErr || new Error("تعذر فحص الفاتورة عبر نماذج الذكاء الاصطناعي");
+  }
 
   /**
    * Cancel ongoing AI scan
    */
-  static cancelAiScan() {
+    static cancelAiScan() {
     if (this.activeScanAbortController) {
       try {
         this.activeScanAbortController.abort();
@@ -929,6 +992,8 @@ class AccountingComponent {
     this.scannedAuditData = d;
     const subtotal = Number(d.subtotal || 0);
     const taxAmount = Number(d.taxAmount || 0);
+    const vat14 = Number(d.taxDetails?.vat14 || 0);
+    const schedule5 = Number(d.taxDetails?.schedule5 || 0);
     const amount = Number(d.amount || 0);
 
     const pagesHtml = Array.isArray(d.pageBreakdown) && d.pageBreakdown.length > 1
@@ -943,26 +1008,28 @@ class AccountingComponent {
     const itemsHtml = Array.isArray(d.items) && d.items.length > 0
       ? `<div class="ai-items-collapsible">
           <button type="button" class="ai-items-toggle" onclick="window.AccountingComponent.toggleAiItemsTable()">
-            <span>📦 استعراض الأصناف المستخرجة بالتفصيل (${d.items.length} صنف)</span>
+            <span>📦 استعراض الأصناف المستخرجة بالتفصيل (${d.items.length} صنف مع الأسعار والكسور)</span>
             <span id="ai-items-toggle-icon">▼</span>
           </button>
-          <div id="ai-items-table-wrapper" style="display: none; max-height: 180px; overflow-y: auto; margin-top: 0.5rem;">
+          <div id="ai-items-table-wrapper" style="display: none; max-height: 200px; overflow-y: auto; margin-top: 0.5rem;">
             <table class="ai-items-table">
               <thead>
                 <tr>
+                  <th>ص</th>
                   <th>الصنف</th>
                   <th>الكمية</th>
-                  <th>السعر</th>
+                  <th>سعر الوحدة</th>
                   <th>الإجمالي</th>
                 </tr>
               </thead>
               <tbody>
                 ${d.items.map(it => `
                   <tr>
+                    <td style="color: var(--text-muted); font-size: 0.7rem;">${it.page || 1}</td>
                     <td>${it.name || "صنف"}</td>
-                    <td>${it.quantity || 1}</td>
-                    <td>${Number(it.price || 0).toFixed(2)}</td>
-                    <td style="font-weight: 700; color: var(--accent-gold);">${Number(it.total || 0).toFixed(2)}</td>
+                    <td style="font-family: 'Outfit', sans-serif;">${it.quantity || 1}</td>
+                    <td style="font-family: 'Outfit', sans-serif;">${Number(it.unitPrice || it.price || 0).toFixed(2)}</td>
+                    <td style="font-weight: 700; color: var(--accent-gold); font-family: 'Outfit', sans-serif;">${Number(it.totalPrice || it.total || 0).toFixed(2)}</td>
                   </tr>
                 `).join("")}
               </tbody>
@@ -975,7 +1042,7 @@ class AccountingComponent {
       <div class="ai-audit-header">
         <div class="ai-audit-title">
           <span>✨</span>
-          <span>نتائج التدقيق المحاسبي بالذكاء الاصطناعي (AI Financial Audit)</span>
+          <span>نتائج التدقيق المحاسبي الدقيق (AI Financial Audit)</span>
         </div>
         <span class="ai-audit-badge">دقة حسابية 100%</span>
       </div>
@@ -993,23 +1060,29 @@ class AccountingComponent {
           <div class="ai-audit-label">الإجمالي النهائي الشامل للضرائب (Grand Total)</div>
           <div class="ai-audit-value">${amount.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} <small style="font-size: 0.65rem;">ج.م</small></div>
           <button type="button" class="btn-use-amount active" id="btn-use-amount" onclick="window.AccountingComponent.setScannedAmount('amount', ${amount})">
-            ✓ اعتماد الإجمالي الشامل
+            ✓ اعتماد الإجمالي الشامل (الموصى به)
           </button>
         </div>
       </div>
 
-      ${taxAmount > 0 ? `
-        <div style="font-size: 0.73rem; color: var(--text-secondary); margin-bottom: 0.55rem; display: flex; align-items: center; gap: 0.4rem;">
-          <span>🧾</span>
-          <span>قيمة الضرائب المضافة والجدول المحتسبة: <strong style="color: var(--color-rose);">${taxAmount.toFixed(2)} ج.م</strong></span>
-        </div>
-      ` : ""}
+      <div style="font-size: 0.73rem; color: var(--text-secondary); margin-bottom: 0.55rem; background: rgba(255,255,255,0.03); border: 1px solid var(--border-color); border-radius: var(--radius-sm); padding: 0.4rem 0.6rem; display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: center;">
+        <span>🧾 <strong>تفصيل الضرائب المطبوعة:</strong></span>
+        <span>ضريبة ق.م (14%): <strong style="color: var(--color-rose);">${vat14.toFixed(2)} ج.م</strong></span>
+        <span>ضريبة جدول (5%): <strong style="color: var(--color-rose);">${schedule5.toFixed(2)} ج.م</strong></span>
+        <span>إجمالي الضرائب: <strong style="color: var(--color-rose);">${taxAmount.toFixed(2)} ج.م</strong></span>
+      </div>
 
       ${pagesHtml}
       ${itemsHtml}
     `;
 
     container.style.display = "block";
+
+    // Auto-select Grand Total into invoice amount input
+    const amountInput = document.getElementById("invoice-amount-input");
+    if (amountInput && amount > 0) {
+      amountInput.value = amount.toFixed(2);
+    }
   }
 
   static setScannedAmount(type, value) {
@@ -1145,9 +1218,12 @@ class AccountingComponent {
    */
   static viewInvoiceFullImage(imagesInput, title = "صورة الفاتورة") {
     let images = [];
+    let invoiceObj = null;
+
     if (Array.isArray(imagesInput)) {
       images = imagesInput;
     } else if (typeof imagesInput === "object" && imagesInput !== null) {
+      invoiceObj = imagesInput;
       images = (imagesInput.images && imagesInput.images.length > 0)
         ? imagesInput.images
         : (imagesInput.imageData ? [imagesInput.imageData] : []);
@@ -1161,9 +1237,12 @@ class AccountingComponent {
       return;
     }
 
+    this.viewerInvoice = invoiceObj;
     this.viewerImages = images;
     this.viewerCurrentIndex = 0;
     this.viewerTitle = title;
+    this.viewerActiveTab = window.innerWidth <= 960 ? "image" : "split";
+    this.viewerItemsFilterPage = "all";
 
     this.renderViewerModal();
     this.resetZoom();
@@ -1172,20 +1251,26 @@ class AccountingComponent {
 
   static renderViewerModal() {
     const modalImage = document.getElementById("full-invoice-modal-image");
-    const modalTitle = document.getElementById("full-invoice-modal-title");
+    const modalTitleText = document.getElementById("full-invoice-modal-title-text");
     const downloadBtn = document.getElementById("btn-download-full-invoice");
     const galleryNav = document.getElementById("full-invoice-gallery-nav");
     const galleryCounter = document.getElementById("full-invoice-gallery-counter");
     const btnPrev = document.getElementById("btn-gallery-prev");
     const btnNext = document.getElementById("btn-gallery-next");
     const thumbnailsStrip = document.getElementById("full-invoice-thumbnails-strip");
+    const itemsCountBadge = document.getElementById("viewer-items-count-badge");
 
     const total = this.viewerImages.length;
     const currentImg = this.viewerImages[this.viewerCurrentIndex] || "";
+    const items = this.viewerInvoice?.items || [];
+
+    if (itemsCountBadge) {
+      itemsCountBadge.textContent = `${items.length} صنف`;
+    }
 
     if (modalImage) modalImage.src = currentImg;
-    if (modalTitle) {
-      modalTitle.textContent = total > 1
+    if (modalTitleText) {
+      modalTitleText.textContent = total > 1
         ? `${this.viewerTitle} (صفحة ${this.viewerCurrentIndex + 1} من ${total})`
         : this.viewerTitle;
     }
@@ -1219,12 +1304,268 @@ class AccountingComponent {
       if (thumbnailsStrip) thumbnailsStrip.style.display = "none";
     }
 
+    this.updateViewerTabDisplay();
+    this.renderViewerItemsTable();
     this.resetZoom();
+  }
+
+  static switchViewerTab(tab) {
+    this.viewerActiveTab = tab;
+    this.updateViewerTabDisplay();
+  }
+
+  static updateViewerTabDisplay() {
+    const tab = this.viewerActiveTab;
+    const mainContainer = document.getElementById("viewer-main-container");
+    const imagePane = document.getElementById("viewer-image-pane");
+    const itemsPane = document.getElementById("viewer-items-pane");
+
+    const btnSplit = document.getElementById("btn-viewer-tab-split");
+    const btnImage = document.getElementById("btn-viewer-tab-image");
+    const btnItems = document.getElementById("btn-viewer-tab-items");
+
+    [btnSplit, btnImage, btnItems].forEach(b => b && b.classList.remove("active"));
+
+    if (tab === "split") {
+      if (btnSplit) btnSplit.classList.add("active");
+      if (mainContainer) {
+        mainContainer.classList.add("split-mode");
+        mainContainer.style.display = "grid";
+      }
+      if (imagePane) imagePane.style.display = "flex";
+      if (itemsPane) itemsPane.style.display = "flex";
+    } else if (tab === "image") {
+      if (btnImage) btnImage.classList.add("active");
+      if (mainContainer) {
+        mainContainer.classList.remove("split-mode");
+        mainContainer.style.display = "flex";
+      }
+      if (imagePane) imagePane.style.display = "flex";
+      if (itemsPane) itemsPane.style.display = "none";
+    } else if (tab === "items") {
+      if (btnItems) btnItems.classList.add("active");
+      if (mainContainer) {
+        mainContainer.classList.remove("split-mode");
+        mainContainer.style.display = "flex";
+      }
+      if (imagePane) imagePane.style.display = "none";
+      if (itemsPane) itemsPane.style.display = "flex";
+    }
+  }
+
+  static setViewerItemsPageFilter(page) {
+    this.viewerItemsFilterPage = page;
+    this.renderViewerItemsTable();
+  }
+
+  static renderViewerItemsTable() {
+    const container = document.getElementById("viewer-items-pane");
+    if (!container) return;
+
+    const inv = this.viewerInvoice;
+    const totalPages = this.viewerImages?.length || 1;
+
+    if (!inv || (!inv.items || inv.items.length === 0) && !inv.amount) {
+      container.innerHTML = `
+        <div style="text-align: center; padding: 2.5rem 1rem; color: var(--text-secondary); margin: auto;">
+          <div style="font-size: 2.8rem; margin-bottom: 0.75rem;">🤖</div>
+          <h4 style="color: var(--accent-gold); margin-bottom: 0.5rem; font-size: 1.1rem;">لم يتم فحص أصناف هذه الفاتورة بالذكاء الاصطناعي</h4>
+          <p style="font-size: 0.85rem; line-height: 1.6; max-width: 420px; margin: 0 auto 1.25rem;">
+            يمكنك فحص وقراءة كل الأصناف والكميات والأسعار الفردية والضرائب تلقائياً من الصورة بدقة متناهية.
+          </p>
+          <button type="button" class="btn btn-primary" id="btn-viewer-scan-retroactive" onclick="window.AccountingComponent.scanCurrentViewerInvoice()" style="font-size: 0.88rem; padding: 0.6rem 1.25rem;">
+            ✨ فحص واستخراج الأصناف بالـ AI الآن
+          </button>
+        </div>
+      `;
+      return;
+    }
+
+    const allItems = Array.isArray(inv.items) ? inv.items : [];
+    const filter = this.viewerItemsFilterPage;
+
+    const filteredItems = filter === "all"
+      ? allItems
+      : allItems.filter(it => (it.page || 1) === Number(filter));
+
+    const subtotal = Number(inv.subtotal || 0);
+    const vat14 = Number(inv.taxDetails?.vat14 || 0);
+    const schedule5 = Number(inv.taxDetails?.schedule5 || 0);
+    const taxAmount = Number(inv.taxAmount || (vat14 + schedule5));
+    const amount = Number(inv.amount || (subtotal + taxAmount));
+
+    const currentFilteredSum = filteredItems.reduce((s, it) => s + Number(it.totalPrice || (it.quantity * it.unitPrice) || 0), 0);
+
+    // Page filter tabs
+    let pageTabsHtml = "";
+    if (totalPages > 1 || allItems.some(it => it.page > 1)) {
+      const pageCounts = {};
+      allItems.forEach(it => {
+        const p = it.page || 1;
+        pageCounts[p] = (pageCounts[p] || 0) + 1;
+      });
+
+      pageTabsHtml = `
+        <div class="viewer-page-filter-bar">
+          <span style="font-size: 0.75rem; color: var(--text-muted); font-weight: 600;">📑 تصفية حسب الصفحة:</span>
+          <button type="button" class="viewer-page-filter-btn ${filter === 'all' ? 'active' : ''}" onclick="window.AccountingComponent.setViewerItemsPageFilter('all')">
+            كافة الصفحات (${allItems.length})
+          </button>
+          ${Array.from({ length: totalPages }, (_, i) => i + 1).map(p => `
+            <button type="button" class="viewer-page-filter-btn ${filter === p ? 'active' : ''}" onclick="window.AccountingComponent.setViewerItemsPageFilter(${p})">
+              ص ${p} (${pageCounts[p] || 0})
+            </button>
+          `).join("")}
+        </div>
+      `;
+    }
+
+    container.innerHTML = `
+      <!-- Financial Totals Strip -->
+      <div class="viewer-financial-strip">
+        <div class="viewer-stat-box">
+          <div class="viewer-stat-box-title">قبل الضريبة (Subtotal)</div>
+          <div class="viewer-stat-box-val">${subtotal.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} <small style="font-size: 0.65rem;">ج.م</small></div>
+        </div>
+        <div class="viewer-stat-box">
+          <div class="viewer-stat-box-title">ضريبة ق.م 14% (VAT)</div>
+          <div class="viewer-stat-box-val" style="color: var(--color-rose);">${vat14.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} <small style="font-size: 0.65rem;">ج.م</small></div>
+        </div>
+        <div class="viewer-stat-box">
+          <div class="viewer-stat-box-title">ضريبة جدول 5% (Schd)</div>
+          <div class="viewer-stat-box-val" style="color: var(--color-rose);">${schedule5.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} <small style="font-size: 0.65rem;">ج.م</small></div>
+        </div>
+        <div class="viewer-stat-box featured">
+          <div class="viewer-stat-box-title" style="color: var(--accent-gold);">الإجمالي الشامل (Total)</div>
+          <div class="viewer-stat-box-val">${amount.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} <small style="font-size: 0.65rem;">ج.م</small></div>
+        </div>
+      </div>
+
+      ${pageTabsHtml}
+
+      <!-- Items Table Wrapper -->
+      <div class="viewer-table-wrapper">
+        <table class="viewer-items-table">
+          <thead>
+            <tr>
+              <th style="width: 32px; text-align: center;">#</th>
+              ${totalPages > 1 ? '<th style="width: 44px; text-align: center;">ص</th>' : ''}
+              <th>اسم الصنف</th>
+              <th style="width: 55px; text-align: center;">الكمية</th>
+              <th style="width: 85px; text-align: center;">سعر الوحدة</th>
+              <th style="width: 95px; text-align: left;">إجمالي الصنف</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${filteredItems.length > 0 ? filteredItems.map((it, idx) => `
+              <tr>
+                <td style="text-align: center; color: var(--text-muted); font-size: 0.72rem;">${idx + 1}</td>
+                ${totalPages > 1 ? `<td style="text-align: center; font-size: 0.72rem; color: var(--accent-gold);">ص ${it.page || 1}</td>` : ''}
+                <td style="font-weight: 600; color: var(--text-primary);">${it.name || "صنف"}</td>
+                <td class="num" style="text-align: center;">${it.quantity || 1}</td>
+                <td class="num" style="text-align: center;">${Number(it.unitPrice || it.price || 0).toFixed(2)}</td>
+                <td class="total" style="text-align: left;">${Number(it.totalPrice || it.total || (it.quantity * it.unitPrice) || 0).toFixed(2)} <small style="font-size: 0.65rem; color: var(--text-muted);">ج.م</small></td>
+              </tr>
+            `).join("") : `
+              <tr>
+                <td colspan="${totalPages > 1 ? 6 : 5}" style="text-align: center; padding: 1.5rem; color: var(--text-muted);">
+                  لا توجد أصناف في الصفحة المحددة.
+                </td>
+              </tr>
+            `}
+          </tbody>
+          <tfoot>
+            <tr style="background: rgba(255,255,255,0.05); font-weight: 800;">
+              <td colspan="${totalPages > 1 ? 3 : 2}" style="padding: 0.5rem 0.6rem; color: var(--accent-gold);">
+                مجموع الأصناف المعروضة (${filteredItems.length} صنف):
+              </td>
+              <td class="num" style="text-align: center; color: var(--text-primary);">
+                ${filteredItems.reduce((q, it) => q + (Number(it.quantity) || 1), 0)}
+              </td>
+              <td></td>
+              <td class="total" style="text-align: left; font-size: 0.95rem;">
+                ${currentFilteredSum.toFixed(2)} <small style="font-size: 0.7rem;">ج.م</small>
+              </td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    `;
+  }
+
+  static async scanCurrentViewerInvoice() {
+    const inv = this.viewerInvoice;
+    if (!inv) return;
+    const images = (inv.images && inv.images.length > 0) ? inv.images : (inv.imageData ? [inv.imageData] : []);
+    if (images.length === 0) {
+      window.ToastComponent.show("لا توجد صورة لفحصها", "warning");
+      return;
+    }
+
+    const btn = document.getElementById("btn-viewer-scan-retroactive");
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = "⚡ جاري الفحص واستخراج الأصناف بالـ AI...";
+    }
+
+    const apiKey = localStorage.getItem("moka_gemini_api_key") || "";
+
+    try {
+      let res;
+      try {
+        res = await this.api.scanInvoice(images, apiKey);
+      } catch (e) {
+        if (apiKey) {
+          res = await this.scanWithGeminiDirect(images, apiKey);
+        } else {
+          throw e;
+        }
+      }
+
+      if (res && res.success && res.data) {
+        const d = res.data;
+        inv.items = d.items || [];
+        inv.subtotal = d.subtotal || 0;
+        inv.taxAmount = d.taxAmount || 0;
+        inv.taxDetails = d.taxDetails || { vat14: 0, schedule5: 0 };
+        inv.amount = d.amount || inv.amount;
+        inv.pageBreakdown = d.pageBreakdown || [];
+
+        // Save update to server and local backup
+        const id = inv._id || inv.id;
+        if (id && !String(id).startsWith("local-")) {
+          await this.api.updateInvoice(id, {
+            items: inv.items,
+            subtotal: inv.subtotal,
+            taxAmount: inv.taxAmount,
+            taxDetails: inv.taxDetails,
+            amount: inv.amount,
+            pageBreakdown: inv.pageBreakdown
+          });
+        }
+
+        const backup = this.loadLocalBackup(this.currentMonth);
+        const idx = backup.invoices.findIndex(item => (item._id || item.id) === id);
+        if (idx !== -1) {
+          backup.invoices[idx] = { ...backup.invoices[idx], ...inv };
+          this.saveLocalBackup(this.currentMonth, backup);
+        }
+
+        this.renderViewerItemsTable();
+        this.render();
+        window.ToastComponent.show(`✨ تم استخراج ${inv.items.length} صنف وحساب الضرائب بنجاح!`, "success");
+      }
+    } catch (err) {
+      window.ToastComponent.show("فشل الفحص: " + err.message, "error");
+    } finally {
+      if (btn) btn.disabled = false;
+    }
   }
 
   static galleryNext() {
     if (this.viewerCurrentIndex < this.viewerImages.length - 1) {
       this.viewerCurrentIndex++;
+      this.viewerItemsFilterPage = this.viewerCurrentIndex + 1;
       this.renderViewerModal();
     }
   }
@@ -1232,6 +1573,7 @@ class AccountingComponent {
   static galleryPrev() {
     if (this.viewerCurrentIndex > 0) {
       this.viewerCurrentIndex--;
+      this.viewerItemsFilterPage = this.viewerCurrentIndex + 1;
       this.renderViewerModal();
     }
   }
@@ -1239,11 +1581,12 @@ class AccountingComponent {
   static selectViewerPage(idx) {
     if (idx >= 0 && idx < this.viewerImages.length) {
       this.viewerCurrentIndex = idx;
+      this.viewerItemsFilterPage = idx + 1;
       this.renderViewerModal();
     }
   }
 
-  // ================= Zoom & Pan Controls =================
+    // ================= Zoom & Pan Controls =================
   static applyZoomTransform(animate = false) {
     const content = document.getElementById("invoice-zoom-content");
     const badge = document.getElementById("zoom-level-badge");
@@ -1467,9 +1810,17 @@ class AccountingComponent {
       ? [...this.pendingImages]
       : (this.pendingImageData ? [this.pendingImageData] : []);
 
+    const existingInv = this.editingInvoiceId ? this.invoices.find(item => (item._id || item.id) === this.editingInvoiceId) : null;
+    const auditData = this.scannedAuditData || {};
+
     const invoiceData = {
       supplier,
       amount,
+      subtotal: auditData.subtotal !== undefined ? auditData.subtotal : (existingInv?.subtotal || 0),
+      taxAmount: auditData.taxAmount !== undefined ? auditData.taxAmount : (existingInv?.taxAmount || 0),
+      taxDetails: auditData.taxDetails || existingInv?.taxDetails || { vat14: 0, schedule5: 0 },
+      items: Array.isArray(auditData.items) && auditData.items.length > 0 ? auditData.items : (existingInv?.items || []),
+      pageBreakdown: Array.isArray(auditData.pageBreakdown) && auditData.pageBreakdown.length > 0 ? auditData.pageBreakdown : (existingInv?.pageBreakdown || []),
       invoiceNumber: numberInput?.value.trim() || "",
       category: categoryInput?.value || "خامات وبن",
       invoiceDate: dateInput?.value || new Date().toISOString(),
@@ -1858,7 +2209,10 @@ class AccountingComponent {
             ${inv.notes || "-"}
           </td>
           <td style="text-align: center; white-space: nowrap;">
-            <button class="btn-icon" onclick="window.AccountingComponent.openEditInvoiceModal('${id}')" title="تعديل بيانات الفاتورة" style="border: none; color: var(--accent-gold); font-size: 1rem; margin-left: 0.35rem; background: transparent; cursor: pointer; padding: 0.35rem 0.5rem; border-radius: var(--radius-sm); transition: var(--transition);">
+            <button class="btn-icon" onclick="window.AccountingComponent.viewInvoiceByData(${idx})" title="استعراض الفاتورة والأصناف المستخرجة بالذكاء الاصطناعي" style="border: none; color: var(--color-sky); font-size: 1.05rem; margin-left: 0.25rem; background: transparent; cursor: pointer; padding: 0.35rem 0.45rem; border-radius: var(--radius-sm); transition: var(--transition);">
+              👁️
+            </button>
+            <button class="btn-icon" onclick="window.AccountingComponent.openEditInvoiceModal('${id}')" title="تعديل بيانات الفاتورة" style="border: none; color: var(--accent-gold); font-size: 1rem; margin-left: 0.25rem; background: transparent; cursor: pointer; padding: 0.35rem 0.45rem; border-radius: var(--radius-sm); transition: var(--transition);">
               ✏️
             </button>
             <button class="btn-icon-danger" onclick="window.AccountingComponent.deleteInvoice('${id}', '${inv.supplier}')" title="حذف الفاتورة">
