@@ -406,12 +406,14 @@ class AccountingComponent {
 قواعد التدقيق الحسابي الإلزامية:
 1. دقة الأرقام والكسور العشرية: انتبه بدقة شديدة لكل الأرقام والكسور العشرية (مثال: 55.75، 62.35، 8364.75، 9034.09). لا تقرب أو تحذف القروش نهائياً!
 2. استخراج قائمة الأصناف (items):
-   - لكل صنف:
+   - لكل صنف استخرج بدقة من أعمدة الفاتورة:
      * "page": رقم الصفحة المأخوذ منها الصنف (1، 2، 3...)
      * "name": اسم الصنف كما هو مكتوب
      * "quantity": الكمية كرقم دقيق
      * "unitPrice": سعر الوحدة الصافي بالكسور العشرية كرقم
-     * "totalPrice": إجمالي الصنف (الكمية × سعر الوحدة) بالكسور العشرية كرقم
+     * "taxType": نوع ونسبة الضريبة المطبوعة في عمود Taxes (مثال: "SCHD 5%" أو "VAT 14%" أو "0%")
+     * "totalPrice": إجمالي الصنف قبل الضريبة المطبوع في عمود Amount
+     * "taxIncluded": إجمالي الصنف شامل الضريبة المطبوع في عمود Tax Incl. (المبلغ بعد إضافة الضريبة)
 3. قراءة الملخص المالي والضرائب من أسفل الفاتورة المطبوعة:
    - untaxedSubtotal: المجموع الصافي للأصناف قبل الضريبة (Untaxed Amount).
    - vat14: قيمة ضريبة القيمة المضافة 14% المطبوعة إن وجدت.
@@ -430,7 +432,7 @@ class AccountingComponent {
   "invoiceNumber": "",
   "category": "خامات وبن",
   "items": [
-    { "page": 1, "name": "اسم الصنف", "quantity": 1, "unitPrice": 0.00, "totalPrice": 0.00 }
+    { "page": 1, "name": "اسم الصنف", "quantity": 1, "unitPrice": 0.00, "taxType": "SCHD 5%", "totalPrice": 0.00, "taxIncluded": 0.00 }
   ],
   "notes": "ملخص الفاتورة والضرائب"
 }`;
@@ -480,42 +482,61 @@ class AccountingComponent {
         let cleanJson = candidate.trim().replace(/^\`\`\`json\s*/, "").replace(/\s*\`\`\`$/, "");
         const parsed = JSON.parse(cleanJson);
 
-        // Mathematical Float Post-processing
+        // Mathematical Float Post-processing with Tax Incl. Support
         const rawItems = Array.isArray(parsed.items) ? parsed.items : [];
         const items = rawItems.map((it, i) => {
           const qty = Number(it.quantity) || 1;
           const unit = Number(it.unitPrice || it.price) || 0;
-          const tot = Number(it.totalPrice || it.total) || (qty * unit);
+          const taxType = String(it.taxType || it.taxes || "SCHD 5%").trim();
+          const tot = Number(it.totalPrice || it.amount || it.total) || (qty * unit);
+
+          let rate = 0;
+          if (taxType.includes("14") || taxType.toUpperCase().includes("VAT")) {
+            rate = 0.14;
+          } else if (taxType.includes("5") || taxType.toUpperCase().includes("SCHD")) {
+            rate = 0.05;
+          }
+
+          let taxIncl = Number(it.taxIncluded || it.taxIncl);
+          if (!taxIncl || isNaN(taxIncl)) {
+            taxIncl = tot * (1 + rate);
+          }
+
           return {
             page: Number(it.page) || 1,
             name: String(it.name || `صنف ${i + 1}`).trim(),
             quantity: qty,
             unitPrice: parseFloat(unit.toFixed(2)),
-            totalPrice: parseFloat(tot.toFixed(2))
+            taxType: taxType,
+            totalPrice: parseFloat(tot.toFixed(2)),
+            taxIncluded: parseFloat(taxIncl.toFixed(2))
           };
         });
 
-        const itemsSum = items.reduce((s, it) => s + it.totalPrice, 0);
-        const untaxedSubtotal = Number(parsed.untaxedSubtotal || parsed.subtotal) || parseFloat(itemsSum.toFixed(2));
+        const itemsSubtotal = items.reduce((s, it) => s + it.totalPrice, 0);
+        const itemsTaxInclSum = items.reduce((s, it) => s + it.taxIncluded, 0);
+        const untaxedSubtotal = Number(parsed.untaxedSubtotal || parsed.subtotal) || parseFloat(itemsSubtotal.toFixed(2));
+        const grandTotal = Number(parsed.grandTotal || parsed.amount) || parseFloat(itemsTaxInclSum.toFixed(2));
         const vat14 = Number(parsed.vat14) || 0;
         const schedule5 = Number(parsed.schedule5) || 0;
-        const taxAmount = Number(parsed.taxAmount) || parseFloat((vat14 + schedule5).toFixed(2));
-        const grandTotal = Number(parsed.grandTotal || parsed.amount) || parseFloat((untaxedSubtotal + taxAmount).toFixed(2));
+        const taxAmount = Number(parsed.taxAmount) || parseFloat((grandTotal - untaxedSubtotal).toFixed(2));
 
         const pageGroups = {};
         items.forEach(it => {
           const p = it.page || 1;
-          if (!pageGroups[p]) pageGroups[p] = { page: p, subtotal: 0, itemsCount: 0 };
+          if (!pageGroups[p]) pageGroups[p] = { page: p, subtotal: 0, taxIncluded: 0, itemsCount: 0 };
           pageGroups[p].subtotal += it.totalPrice;
+          pageGroups[p].taxIncluded += it.taxIncluded;
           pageGroups[p].itemsCount += 1;
         });
 
         const pageBreakdown = Object.values(pageGroups).map(g => ({
           page: g.page,
           subtotal: parseFloat(g.subtotal.toFixed(2)),
-          total: parseFloat(g.subtotal.toFixed(2)),
+          taxIncluded: parseFloat(g.taxIncluded.toFixed(2)),
+          total: parseFloat(g.taxIncluded.toFixed(2)),
           itemsCount: g.itemsCount,
-          note: `صفحة ${g.page}: ${g.itemsCount} صنف بإجمالي ${g.subtotal.toFixed(2)} ج.م`
+          note: `صفحة ${g.page}: ${g.itemsCount} صنف (صافي ${g.subtotal.toFixed(2)} | شامل ${g.taxIncluded.toFixed(2)} ج.م)`
         })).sort((a, b) => a.page - b.page);
 
         return {
@@ -1011,28 +1032,39 @@ class AccountingComponent {
             <span>📦 استعراض الأصناف المستخرجة بالتفصيل (${d.items.length} صنف مع الأسعار والكسور)</span>
             <span id="ai-items-toggle-icon">▼</span>
           </button>
-          <div id="ai-items-table-wrapper" style="display: none; max-height: 200px; overflow-y: auto; margin-top: 0.5rem;">
+          <div id="ai-items-table-wrapper" style="display: none; max-height: 220px; overflow-y: auto; margin-top: 0.5rem;">
             <table class="ai-items-table">
               <thead>
                 <tr>
-                  <th>ص</th>
-                  <th>الصنف</th>
-                  <th>الكمية</th>
-                  <th>سعر الوحدة</th>
-                  <th>الإجمالي</th>
+                  <th style="width: 25px; text-align: center;">ص</th>
+                  <th>اسم الصنف</th>
+                  <th style="width: 40px; text-align: center;">الكمية</th>
+                  <th style="width: 65px; text-align: center;">سعر الوحدة</th>
+                  <th style="width: 60px; text-align: center;">الضريبة</th>
+                  <th style="width: 70px; text-align: center;">قبل الضريبة</th>
+                  <th style="width: 80px; text-align: left;">شامل الضريبة</th>
                 </tr>
               </thead>
               <tbody>
                 ${d.items.map(it => `
                   <tr>
-                    <td style="color: var(--text-muted); font-size: 0.7rem;">${it.page || 1}</td>
-                    <td>${it.name || "صنف"}</td>
-                    <td style="font-family: 'Outfit', sans-serif;">${it.quantity || 1}</td>
-                    <td style="font-family: 'Outfit', sans-serif;">${Number(it.unitPrice || it.price || 0).toFixed(2)}</td>
-                    <td style="font-weight: 700; color: var(--accent-gold); font-family: 'Outfit', sans-serif;">${Number(it.totalPrice || it.total || 0).toFixed(2)}</td>
+                    <td style="color: var(--text-muted); font-size: 0.68rem; text-align: center;">${it.page || 1}</td>
+                    <td style="font-weight: 600;">${it.name || "صنف"}</td>
+                    <td style="font-family: 'Outfit', sans-serif; text-align: center;">${it.quantity || 1}</td>
+                    <td style="font-family: 'Outfit', sans-serif; text-align: center;">${Number(it.unitPrice || it.price || 0).toFixed(2)}</td>
+                    <td style="text-align: center;"><span style="font-size: 0.65rem; background: rgba(245,158,11,0.12); color: var(--accent-gold); padding: 1px 4px; border-radius: 3px;">${it.taxType || "SCHD 5%"}</span></td>
+                    <td style="font-family: 'Outfit', sans-serif; text-align: center; color: var(--text-secondary);">${Number(it.totalPrice || it.total || (it.quantity * it.unitPrice) || 0).toFixed(2)}</td>
+                    <td style="font-weight: 800; color: var(--accent-gold); font-family: 'Outfit', sans-serif; text-align: left;">${Number(it.taxIncluded || (it.totalPrice * 1.05) || 0).toFixed(2)}</td>
                   </tr>
                 `).join("")}
               </tbody>
+              <tfoot>
+                <tr style="background: rgba(255,255,255,0.06); font-weight: 800;">
+                  <td colspan="5" style="text-align: right; color: var(--accent-gold); padding: 0.35rem 0.5rem;">إجمالي الأصناف المكتشفة:</td>
+                  <td style="font-family: 'Outfit', sans-serif; text-align: center; color: var(--text-primary);">${d.items.reduce((s, it) => s + Number(it.totalPrice || (it.quantity * it.unitPrice) || 0), 0).toFixed(2)}</td>
+                  <td style="font-family: 'Outfit', sans-serif; text-align: left; color: var(--accent-gold);">${d.items.reduce((s, it) => s + Number(it.taxIncluded || (it.totalPrice * 1.05) || 0), 0).toFixed(2)} ج.م</td>
+                </tr>
+              </tfoot>
             </table>
           </div>
         </div>`
@@ -1371,7 +1403,7 @@ class AccountingComponent {
           <div style="font-size: 2.8rem; margin-bottom: 0.75rem;">🤖</div>
           <h4 style="color: var(--accent-gold); margin-bottom: 0.5rem; font-size: 1.1rem;">لم يتم فحص أصناف هذه الفاتورة بالذكاء الاصطناعي</h4>
           <p style="font-size: 0.85rem; line-height: 1.6; max-width: 420px; margin: 0 auto 1.25rem;">
-            يمكنك فحص وقراءة كل الأصناف والكميات والأسعار الفردية والضرائب تلقائياً من الصورة بدقة متناهية.
+            يمكنك فحص وقراءة كل الأصناف والكميات والأسعار الفردية والضرائب وعمود Tax Incl. تلقائياً من الصورة بدقة متناهية.
           </p>
           <button type="button" class="btn btn-primary" id="btn-viewer-scan-retroactive" onclick="window.AccountingComponent.scanCurrentViewerInvoice()" style="font-size: 0.88rem; padding: 0.6rem 1.25rem;">
             ✨ فحص واستخراج الأصناف بالـ AI الآن
@@ -1394,7 +1426,14 @@ class AccountingComponent {
     const taxAmount = Number(inv.taxAmount || (vat14 + schedule5));
     const amount = Number(inv.amount || (subtotal + taxAmount));
 
-    const currentFilteredSum = filteredItems.reduce((s, it) => s + Number(it.totalPrice || (it.quantity * it.unitPrice) || 0), 0);
+    const filteredSubtotal = filteredItems.reduce((s, it) => s + Number(it.totalPrice || (it.quantity * it.unitPrice) || 0), 0);
+    const filteredTaxIncl = filteredItems.reduce((s, it) => {
+      const explicit = Number(it.taxIncluded);
+      if (explicit && !isNaN(explicit)) return s + explicit;
+      const rate = (it.taxType && it.taxType.includes("14")) ? 0.14 : 0.05;
+      const base = Number(it.totalPrice || (it.quantity * it.unitPrice) || 0);
+      return s + (base * (1 + rate));
+    }, 0);
 
     // Page filter tabs
     let pageTabsHtml = "";
@@ -1436,55 +1475,75 @@ class AccountingComponent {
           <div class="viewer-stat-box-val" style="color: var(--color-rose);">${schedule5.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} <small style="font-size: 0.65rem;">ج.م</small></div>
         </div>
         <div class="viewer-stat-box featured">
-          <div class="viewer-stat-box-title" style="color: var(--accent-gold);">الإجمالي الشامل (Total)</div>
+          <div class="viewer-stat-box-title" style="color: var(--accent-gold);">الإجمالي الشامل (Tax Incl.)</div>
           <div class="viewer-stat-box-val">${amount.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} <small style="font-size: 0.65rem;">ج.م</small></div>
         </div>
       </div>
 
       ${pageTabsHtml}
 
-      <!-- Items Table Wrapper -->
+      <!-- Items Table Wrapper with Tax Incl. Column -->
       <div class="viewer-table-wrapper">
         <table class="viewer-items-table">
           <thead>
             <tr>
-              <th style="width: 32px; text-align: center;">#</th>
-              ${totalPages > 1 ? '<th style="width: 44px; text-align: center;">ص</th>' : ''}
+              <th style="width: 28px; text-align: center;">#</th>
+              ${totalPages > 1 ? '<th style="width: 38px; text-align: center;">ص</th>' : ''}
               <th>اسم الصنف</th>
-              <th style="width: 55px; text-align: center;">الكمية</th>
-              <th style="width: 85px; text-align: center;">سعر الوحدة</th>
-              <th style="width: 95px; text-align: left;">إجمالي الصنف</th>
+              <th style="width: 48px; text-align: center;">الكمية</th>
+              <th style="width: 75px; text-align: center;">سعر الوحدة</th>
+              <th style="width: 70px; text-align: center;">الضريبة</th>
+              <th style="width: 85px; text-align: center;">قبل الضريبة</th>
+              <th style="width: 95px; text-align: left; color: var(--accent-gold);">شامل الضريبة (Tax Incl.)</th>
             </tr>
           </thead>
           <tbody>
-            ${filteredItems.length > 0 ? filteredItems.map((it, idx) => `
+            ${filteredItems.length > 0 ? filteredItems.map((it, idx) => {
+              const baseTot = Number(it.totalPrice || it.total || (it.quantity * it.unitPrice) || 0);
+              const rate = (it.taxType && it.taxType.includes("14")) ? 0.14 : 0.05;
+              const incl = Number(it.taxIncluded) && !isNaN(Number(it.taxIncluded))
+                ? Number(it.taxIncluded)
+                : (baseTot * (1 + rate));
+
+              return `
+                <tr>
+                  <td style="text-align: center; color: var(--text-muted); font-size: 0.72rem;">${idx + 1}</td>
+                  ${totalPages > 1 ? `<td style="text-align: center; font-size: 0.72rem; color: var(--accent-gold);">ص ${it.page || 1}</td>` : ''}
+                  <td style="font-weight: 600; color: var(--text-primary);">${it.name || "صنف"}</td>
+                  <td class="num" style="text-align: center;">${it.quantity || 1}</td>
+                  <td class="num" style="text-align: center;">${Number(it.unitPrice || it.price || 0).toFixed(2)}</td>
+                  <td style="text-align: center;">
+                    <span style="font-size: 0.68rem; background: rgba(245,158,11,0.12); color: var(--accent-gold); padding: 1px 5px; border-radius: 3px; border: 1px solid rgba(245,158,11,0.25);">
+                      ${it.taxType || "SCHD 5%"}
+                    </span>
+                  </td>
+                  <td class="num" style="text-align: center; color: var(--text-secondary);">${baseTot.toFixed(2)}</td>
+                  <td class="total" style="text-align: left;">${incl.toFixed(2)} <small style="font-size: 0.65rem; color: var(--text-muted);">ج.م</small></td>
+                </tr>
+              `;
+            }).join("") : `
               <tr>
-                <td style="text-align: center; color: var(--text-muted); font-size: 0.72rem;">${idx + 1}</td>
-                ${totalPages > 1 ? `<td style="text-align: center; font-size: 0.72rem; color: var(--accent-gold);">ص ${it.page || 1}</td>` : ''}
-                <td style="font-weight: 600; color: var(--text-primary);">${it.name || "صنف"}</td>
-                <td class="num" style="text-align: center;">${it.quantity || 1}</td>
-                <td class="num" style="text-align: center;">${Number(it.unitPrice || it.price || 0).toFixed(2)}</td>
-                <td class="total" style="text-align: left;">${Number(it.totalPrice || it.total || (it.quantity * it.unitPrice) || 0).toFixed(2)} <small style="font-size: 0.65rem; color: var(--text-muted);">ج.م</small></td>
-              </tr>
-            `).join("") : `
-              <tr>
-                <td colspan="${totalPages > 1 ? 6 : 5}" style="text-align: center; padding: 1.5rem; color: var(--text-muted);">
+                <td colspan="${totalPages > 1 ? 8 : 7}" style="text-align: center; padding: 1.5rem; color: var(--text-muted);">
                   لا توجد أصناف في الصفحة المحددة.
                 </td>
               </tr>
             `}
           </tbody>
           <tfoot>
-            <tr style="background: rgba(255,255,255,0.05); font-weight: 800;">
+            <tr style="background: rgba(255,255,255,0.06); font-weight: 800;">
               <td colspan="${totalPages > 1 ? 3 : 2}" style="padding: 0.5rem 0.6rem; color: var(--accent-gold);">
-                مجموع الأصناف المعروضة (${filteredItems.length} صنف):
+                مجموع الأصناف (${filteredItems.length} صنف):
               </td>
               <td class="num" style="text-align: center; color: var(--text-primary);">
                 ${filteredItems.reduce((q, it) => q + (Number(it.quantity) || 1), 0)}
               </td>
               <td></td>
-              <td class="total" style="text-align: left; font-size: 0.95rem;">
-                ${currentFilteredSum.toFixed(2)} <small style="font-size: 0.7rem;">ج.م</small>
+              <td></td>
+              <td class="num" style="text-align: center; color: var(--text-primary); font-size: 0.88rem;">
+                ${filteredSubtotal.toFixed(2)}
+              </td>
+              <td class="total" style="text-align: left; font-size: 0.98rem;">
+                ${filteredTaxIncl.toFixed(2)} <small style="font-size: 0.7rem;">ج.م</small>
               </td>
             </tr>
           </tfoot>
