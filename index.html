@@ -66,6 +66,9 @@
       <button class="tab-btn" data-tab="accounting">
         <span>📊 الحسابات والويست والمبيعات</span>
       </button>
+      <button class="tab-btn" data-tab="inventory">
+        <span>📦 المخزن ومتابعة الصلاحية (Inventory)</span>
+      </button>
       <button class="tab-btn" data-tab="architecture" style="display: none;">
         <span>🚀 الربط وقابلية التوسع (Full-Stack & Mongo)</span>
       </button>
@@ -577,6 +580,180 @@ West
         <div class="accounting-subpanel" id="accounting-subpanel-analytics">
           <div id="analytics-breakdown-container">
             <!-- Injected dynamically -->
+          </div>
+        </div>
+      </section>
+
+      <!-- ==================== VIEW 7: INVENTORY & EXPIRY ==================== -->
+      <section class="view-panel" id="view-inventory">
+        <!-- Inventory Action Bar & Quick Buttons -->
+        <div class="accounting-controls-row" style="margin-bottom: 1.25rem;">
+          <div style="display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap;">
+            <button class="btn btn-primary" id="btn-sync-local-sheets" onclick="window.InventoryComponent.syncLocalSheetsNow()">
+              <span>🔄 مزامنة الجرد والويست تلقائياً</span>
+            </button>
+            <button class="btn btn-secondary" onclick="window.InventoryComponent.openImportIncomingModal()" style="border-color: rgba(16, 185, 129, 0.4); color: var(--color-emerald);">
+              <span>📥 استيراد بضاعة جديدة (وارد)</span>
+            </button>
+            <button class="btn btn-secondary" onclick="window.InventoryComponent.openImportWasteModal()" style="border-color: rgba(244, 63, 94, 0.4); color: var(--color-rose);">
+              <span>🗑️ استيراد / خصم ويست (هالك)</span>
+            </button>
+            <button class="btn btn-secondary" onclick="window.InventoryComponent.deductExpiredNow()" style="border-color: rgba(245, 158, 11, 0.4); color: var(--accent-gold);">
+              <span>⏳ فحص وخصم الصلاحيات المنتهية</span>
+            </button>
+            <button class="btn btn-secondary" onclick="window.InventoryComponent.openInitialCountModal()">
+              <span>📋 تسوية جرد جديدة</span>
+            </button>
+          </div>
+          <div>
+            <button class="btn-icon" onclick="window.InventoryComponent.loadData()" title="تحديث البيانات">🔄</button>
+          </div>
+        </div>
+
+        <!-- Inventory KPI Metrics Grid -->
+        <section class="kpi-grid" style="margin-bottom: 1.5rem;">
+          <!-- 1. Available Items Count -->
+          <div class="kpi-card">
+            <div class="kpi-card-header">
+              <span class="kpi-title">📦 الأصناف المتوفرة بالمخزن</span>
+              <div class="kpi-icon" style="background: var(--color-sky-bg); color: var(--color-sky);">🏷️</div>
+            </div>
+            <div class="kpi-value" id="inv-kpi-items">0 / 0 صنف</div>
+            <div class="kpi-subtext">أصناف برصيد متاح في الفرع</div>
+          </div>
+
+          <!-- 2. Total Units in Stock -->
+          <div class="kpi-card featured">
+            <div class="kpi-card-header">
+              <span class="kpi-title" style="color: var(--accent-gold);">📊 إجمالي الرصيد الفعلي</span>
+              <div class="kpi-icon" style="background: var(--accent-gold); color: #fff;">📦</div>
+            </div>
+            <div class="kpi-value" id="inv-kpi-units">0 قطعة</div>
+            <div class="kpi-subtext" style="color: var(--accent-gold);">قطع مخبوزات وحلويات جاهزة</div>
+          </div>
+
+          <!-- 3. Stock Valuation -->
+          <div class="kpi-card">
+            <div class="kpi-card-header">
+              <span class="kpi-title">💰 القيمة التقديرية للمخزون</span>
+              <div class="kpi-icon" style="background: var(--color-emerald-bg); color: var(--color-emerald);">💵</div>
+            </div>
+            <div class="kpi-value" id="inv-kpi-valuation" style="color: var(--color-emerald);">0.00 ج.م</div>
+            <div class="kpi-subtext">بسعر التكلفة / التوريد</div>
+          </div>
+
+          <!-- 4. Expiring Soon Alert -->
+          <div class="kpi-card" id="inv-card-soon">
+            <div class="kpi-card-header">
+              <span class="kpi-title" style="color: var(--accent-gold);">⏳ تنتهي قريباً (خلال 48 س)</span>
+              <div class="kpi-icon" style="background: rgba(245, 158, 11, 0.2); color: var(--accent-gold);">⚠️</div>
+            </div>
+            <div class="kpi-value" id="inv-kpi-expiring-soon" style="color: var(--accent-gold);">0 صنف</div>
+            <div class="kpi-subtext">أولوية البيع والعرض</div>
+          </div>
+
+          <!-- 5. Expired Alert -->
+          <div class="kpi-card" id="inv-card-expired">
+            <div class="kpi-card-header">
+              <span class="kpi-title" style="color: var(--color-rose);">🔴 منتهية الصلاحية (إكسباير)</span>
+              <div class="kpi-icon" style="background: var(--color-rose-bg); color: var(--color-rose);">⛔</div>
+            </div>
+            <div class="kpi-value" id="inv-kpi-expired" style="color: var(--color-rose);">0 صنف</div>
+            <div class="kpi-subtext">تتطلب الخصم إلى الهالك فوراً</div>
+          </div>
+        </section>
+
+        <!-- Subtabs Navigation -->
+        <div class="accounting-subtab-bar" style="margin-bottom: 1.25rem;">
+          <button class="accounting-subtab-btn inventory-subtab-btn active" data-subtab="stock">
+            <span>📋 الأرصدة الحالية والصلاحيات (Live Stock)</span>
+          </button>
+          <button class="accounting-subtab-btn inventory-subtab-btn" data-subtab="movements">
+            <span>📜 سجل حركات المخزن (Audit Trail)</span>
+          </button>
+        </div>
+
+        <!-- Subpanel 1: Live Stock Table -->
+        <div id="inventory-subpanel-stock">
+          <div class="panel-card">
+            <!-- Filter & Search Toolbar -->
+            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.75rem; margin-bottom: 1rem;">
+              <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+                <button type="button" class="btn btn-secondary inventory-filter-pill active" data-filter="all">كافة الأصناف</button>
+                <button type="button" class="btn btn-secondary inventory-filter-pill" data-filter="in_stock">المتوفر فقط</button>
+                <button type="button" class="btn btn-secondary inventory-filter-pill" data-filter="expiring_soon">⏳ تنتهي قريباً</button>
+                <button type="button" class="btn btn-secondary inventory-filter-pill" data-filter="expired">🔴 منتهية الصلاحية</button>
+                <button type="button" class="btn btn-secondary inventory-filter-pill" data-filter="out_of_stock">نفد الرصيد</button>
+              </div>
+              <div style="position: relative; min-width: 260px;">
+                <input type="text" id="inventory-search-input" class="form-control" placeholder="🔍 بحث باسم الصنف أو التصنيف..." style="padding-right: 2rem; font-size: 0.85rem;" />
+              </div>
+            </div>
+
+            <div class="table-container">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th style="width: 45px; text-align: center;">#</th>
+                    <th>اسم الصنف</th>
+                    <th>التصنيف</th>
+                    <th>فترة الصلاحية</th>
+                    <th style="text-align: center;">الرصيد الفعلي</th>
+                    <th>حالة وتاريخ الصلاحية</th>
+                    <th>القيمة الإجمالية</th>
+                    <th style="width: 140px; text-align: center;">إجراءات</th>
+                  </tr>
+                </thead>
+                <tbody id="inventory-table-body">
+                  <!-- Injected dynamically -->
+                </tbody>
+              </table>
+
+              <div id="inventory-empty-state" style="display: none; text-align: center; padding: 3rem 1.5rem; color: var(--text-muted);">
+                <div style="font-size: 3rem; margin-bottom: 0.75rem;">📦</div>
+                <div style="font-size: 1.1rem; font-weight: 700; color: var(--text-primary); margin-bottom: 0.5rem;">
+                  لم يتم تهيئة أرصدة المخزن بعد
+                </div>
+                <p style="font-size: 0.88rem; margin-bottom: 1.25rem;">
+                  اضغط على زر "مزامنة الجرد والويست تلقائياً" لوضع أرقام شيت جرد موكا 9-11 وخصم ويست west 11 فوراً.
+                </p>
+                <button class="btn btn-primary" onclick="window.InventoryComponent.syncLocalSheetsNow()">
+                  🔄 مزامنة الجرد والويست الآن
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Subpanel 2: Movements Log -->
+        <div id="inventory-subpanel-movements" style="display: none;">
+          <div class="panel-card">
+            <div class="panel-header">
+              <div class="panel-title">
+                <span>📜 سجل كافة الحركات الواردة والمنصرفة والهالك</span>
+              </div>
+              <button class="btn btn-secondary" onclick="window.InventoryComponent.loadMovements()" style="font-size: 0.8rem; padding: 0.35rem 0.75rem;">
+                🔄 تحديث السجل
+              </button>
+            </div>
+            <div class="table-container">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th style="width: 40px; text-align: center;">#</th>
+                    <th>التاريخ</th>
+                    <th>نوع الحركة</th>
+                    <th>الصنف</th>
+                    <th style="text-align: center;">الكمية</th>
+                    <th style="text-align: center;">تغير الرصيد</th>
+                    <th>السبب / المرجع</th>
+                  </tr>
+                </thead>
+                <tbody id="inventory-movements-tbody">
+                  <!-- Injected dynamically -->
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       </section>
@@ -1158,6 +1335,125 @@ West
     <div id="invoice-hover-preview-caption" class="hover-preview-caption">معاينة الفاتورة</div>
   </div>
 
+  <!-- Modal: Import Incoming Stock Sheet -->
+  <div class="modal-backdrop" id="modal-import-incoming-stock">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <h3 class="modal-title">📥 استيراد بضاعة جديدة (وارد يومي)</h3>
+        <button class="modal-close" data-close="modal-import-incoming-stock">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p style="font-size: 0.88rem; color: var(--text-secondary); margin-bottom: 1rem;">
+          ارفع شيت البضاعة الواردة (Excel أو CSV) ليتم إضافة الكميات فورياً للمخزن وتحديد فترات وتواريخ الصلاحية آلياً (3 أيام للساندوتشات، 5 أيام للمخبوزات، 14 يوم للمجمدات).
+        </p>
+        <div class="form-group" style="margin-bottom: 1rem;">
+          <label class="form-label">تاريخ وصول البضاعة:</label>
+          <input type="date" id="incoming-arrival-date" class="form-control" />
+        </div>
+        <div style="border: 2px dashed rgba(16, 185, 129, 0.4); border-radius: var(--radius-md); padding: 2rem 1rem; text-align: center; background: rgba(16, 185, 129, 0.03); cursor: pointer;" onclick="document.getElementById('incoming-file-input').click()">
+          <div style="font-size: 2.5rem; margin-bottom: 0.5rem;">📊</div>
+          <div style="font-weight: 700; color: var(--color-emerald); margin-bottom: 0.35rem;">اضغط لاختيار شيت البضاعة الواردة (.xlsx, .csv)</div>
+          <div style="font-size: 0.75rem; color: var(--text-muted);">أو اسحب وأفلت الملف هنا مباشرة</div>
+          <input type="file" id="incoming-file-input" accept=".xlsx,.xls,.csv" style="display: none;" onchange="window.InventoryComponent.handleIncomingFileUpload(this.files[0])" />
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Import Waste Sheet -->
+  <div class="modal-backdrop" id="modal-import-waste-sheet">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <h3 class="modal-title">🗑️ استيراد وخصم شيت الويست (الهالك)</h3>
+        <button class="modal-close" data-close="modal-import-waste-sheet">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p style="font-size: 0.88rem; color: var(--text-secondary); margin-bottom: 1rem;">
+          ارفع شيت الويست (مثل <code>west 11.xlsx</code>): سيقوم النظام آلياً بقراءة كميات الهالك لكل يوم، وخصمها من رصيد المخزن، وتسجيلها في تقرير الهالك المالي.
+        </p>
+        <div style="border: 2px dashed rgba(244, 63, 94, 0.4); border-radius: var(--radius-md); padding: 2rem 1rem; text-align: center; background: rgba(244, 63, 94, 0.03); cursor: pointer;" onclick="document.getElementById('waste-file-input').click()">
+          <div style="font-size: 2.5rem; margin-bottom: 0.5rem;">🗑️</div>
+          <div style="font-weight: 700; color: var(--color-rose); margin-bottom: 0.35rem;">اضغط لاختيار شيت الويست (.xlsx, .csv)</div>
+          <div style="font-size: 0.75rem; color: var(--text-muted);">يدعم شيتات متابعة الأصناف 30 يوم وشيتات الويست المباشرة</div>
+          <input type="file" id="waste-file-input" accept=".xlsx,.xls,.csv" style="display: none;" onchange="window.InventoryComponent.handleWasteFileUpload(this.files[0])" />
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Import Initial Baseline Count -->
+  <div class="modal-backdrop" id="modal-import-initial-count">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <h3 class="modal-title">📋 تسوية / استيراد شيت جرد المخزن</h3>
+        <button class="modal-close" data-close="modal-import-initial-count">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p style="font-size: 0.88rem; color: var(--text-secondary); margin-bottom: 1rem;">
+          ارفع شيت الجرد الفعلي للمخزن (مثل <code>جرد موكا 9-11-2026.xlsx</code>) لإعادة ضبط وتهيئة رصيد البداية لكافة الأصناف.
+        </p>
+        <div class="form-group" style="margin-bottom: 1rem;">
+          <label class="form-label">تاريخ الجرد الأساسي:</label>
+          <input type="date" id="initial-baseline-date" class="form-control" value="2026-11-09" />
+        </div>
+        <div style="border: 2px dashed var(--border-color); border-radius: var(--radius-md); padding: 2rem 1rem; text-align: center; background: rgba(255, 255, 255, 0.02); cursor: pointer;" onclick="document.getElementById('initial-file-input').click()">
+          <div style="font-size: 2.5rem; margin-bottom: 0.5rem;">📋</div>
+          <div style="font-weight: 700; color: var(--text-primary); margin-bottom: 0.35rem;">اضغط لاختيار شيت الجرد (.xlsx, .csv)</div>
+          <div style="font-size: 0.75rem; color: var(--text-muted);">يتعرف تلقائياً على أعمدة الأيام والأصناف</div>
+          <input type="file" id="initial-file-input" accept=".xlsx,.xls,.csv" style="display: none;" onchange="window.InventoryComponent.handleInitialFileUpload(this.files[0])" />
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Adjust Single Item Stock -->
+  <div class="modal-backdrop" id="modal-adjust-stock">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <h3 class="modal-title">✏️ تسوية رصيد صنف</h3>
+        <button class="modal-close" data-close="modal-adjust-stock">&times;</button>
+      </div>
+      <form onsubmit="window.InventoryComponent.submitStockAdjustment(event)">
+        <div class="modal-body">
+          <input type="hidden" id="adjust-item-id" />
+          <div style="margin-bottom: 1rem; padding: 0.75rem; background: rgba(255,255,255,0.03); border: 1px solid var(--border-color); border-radius: var(--radius-sm);">
+            الصنف: <strong id="adjust-item-name" style="color: var(--accent-gold);">—</strong> | الرصيد الحالي المسجل: <strong id="adjust-item-current">0</strong>
+          </div>
+          <div class="form-group" style="margin-bottom: 1rem;">
+            <label class="form-label">الرصيد الفعلي الجديد (العدد بالقطع):</label>
+            <input type="number" id="adjust-new-qty" class="form-control" min="0" required />
+          </div>
+          <div class="form-group">
+            <label class="form-label">سبب التعديل / ملاحظات:</label>
+            <input type="text" id="adjust-reason" class="form-control" placeholder="مثال: تسوية جرد يدوي / زيادة غير مسجلة" value="تسوية جرد يدوية" />
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-close="modal-adjust-stock">إلغاء</button>
+          <button type="submit" class="btn btn-primary">حفظ التسوية</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal: View Batches Details -->
+  <div class="modal-backdrop" id="modal-view-batches">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <h3 class="modal-title" id="batches-modal-title">📦 تفاصيل الباتشات والتواريخ</h3>
+        <button class="modal-close" data-close="modal-view-batches">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div id="batches-modal-list">
+          <!-- Dynamically filled -->
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-close="modal-view-batches">إغلاق</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Toast Notification Container -->
   <div class="toast-container" id="toast-container"></div>
 
@@ -1178,6 +1474,7 @@ West
   <script src="js/components/catalogManager.js"></script>
   <script src="js/components/invoiceView.js"></script>
   <script src="js/components/accounting.js"></script>
+  <script src="js/components/inventory.js"></script>
   <script src="js/app.js"></script>
 </body>
 

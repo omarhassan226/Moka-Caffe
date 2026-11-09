@@ -2837,3 +2837,21 @@ body::after {
   background: rgba(0, 0, 0, 0.25);
   max-height: 480px;
 }
+
+/* ==========================================================================
+   Inventory & Expiry Module Styles
+   ========================================================================== */
+.inventory-filter-pill {
+  font-size: 0.8rem;
+  padding: 0.35rem 0.75rem;
+  border-radius: var(--radius-sm);
+  transition: all 0.2s ease;
+  cursor: pointer;
+}
+
+.inventory-filter-pill.active {
+  background: var(--accent-gold) !important;
+  color: #121212 !important;
+  font-weight: 700 !important;
+  border-color: var(--accent-gold) !important;
+}

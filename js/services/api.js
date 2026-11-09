@@ -238,6 +238,59 @@ class ApiService {
     });
   }
 
+  // ==================== Inventory & Expiry Endpoints ====================
+  getInventoryOverview(params = {}) {
+    const query = new URLSearchParams(params).toString();
+    return this.request(`/inventory${query ? `?${query}` : ""}`);
+  }
+
+  importInventoryInitial(payload = {}) {
+    return this.request("/inventory/import-initial", {
+      method: "POST",
+      body: JSON.stringify(payload)
+    });
+  }
+
+  importInventoryWaste(payload = {}) {
+    return this.request("/inventory/import-waste", {
+      method: "POST",
+      body: JSON.stringify(payload)
+    });
+  }
+
+  importIncomingGoods(payload = {}) {
+    return this.request("/inventory/import-incoming", {
+      method: "POST",
+      body: JSON.stringify(payload)
+    });
+  }
+
+  deductExpiredGoods(payload = {}) {
+    return this.request("/inventory/deduct-expired", {
+      method: "POST",
+      body: JSON.stringify(payload)
+    });
+  }
+
+  adjustInventoryStock(payload) {
+    return this.request("/inventory/adjust", {
+      method: "POST",
+      body: JSON.stringify(payload)
+    });
+  }
+
+  getInventoryMovements(params = {}) {
+    const query = new URLSearchParams(params).toString();
+    return this.request(`/inventory/movements${query ? `?${query}` : ""}`);
+  }
+
+  syncLocalInventorySheets() {
+    return this.request("/inventory/sync-local-sheets", {
+      method: "POST",
+      body: JSON.stringify({})
+    });
+  }
+
   // System
   getHealth() {
     return this.request("/health");

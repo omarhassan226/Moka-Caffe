@@ -36,6 +36,9 @@ class AppController {
     if (window.AccountingComponent) {
       window.AccountingComponent.init(this.store, this);
     }
+    if (window.InventoryComponent) {
+      window.InventoryComponent.init(this.store, this);
+    }
 
     // 4. Load Data from Backend API
     try {
@@ -126,6 +129,11 @@ class AppController {
       if (window.AccountingComponent) {
         window.AccountingComponent.render();
         window.AccountingComponent.loadData();
+      }
+    } else if (tabId === "inventory") {
+      if (window.InventoryComponent) {
+        window.InventoryComponent.render();
+        window.InventoryComponent.loadData();
       }
     }
   }
