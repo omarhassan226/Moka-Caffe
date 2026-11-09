@@ -1336,100 +1336,128 @@ West
   </div>
 
   <!-- Modal: Import Incoming Stock Sheet -->
-  <div class="modal-backdrop" id="modal-import-incoming-stock">
-    <div class="modal-dialog">
-      <div class="modal-header">
-        <h3 class="modal-title">📥 استيراد بضاعة جديدة (وارد يومي)</h3>
-        <button class="modal-close" data-close="modal-import-incoming-stock">&times;</button>
+  <div class="modal-overlay" id="modal-import-incoming-stock" role="dialog" aria-modal="true">
+    <div class="modal-content" style="max-width: 520px;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem;">
+        <h3 style="font-weight: 700; color: var(--color-emerald); display: flex; align-items: center; gap: 0.5rem; font-size: 1.15rem;">
+          <span>📥</span>
+          <span>استيراد بضاعة جديدة (وارد يومي)</span>
+        </h3>
+        <button class="btn-icon" onclick="window.ModalComponent.close('modal-import-incoming-stock')" style="border: none;" aria-label="إغلاق">✕</button>
       </div>
-      <div class="modal-body">
-        <p style="font-size: 0.88rem; color: var(--text-secondary); margin-bottom: 1rem;">
-          ارفع شيت البضاعة الواردة (Excel أو CSV) ليتم إضافة الكميات فورياً للمخزن وتحديد فترات وتواريخ الصلاحية آلياً (3 أيام للساندوتشات، 5 أيام للمخبوزات، 14 يوم للمجمدات).
-        </p>
-        <div class="form-group" style="margin-bottom: 1rem;">
-          <label class="form-label">تاريخ وصول البضاعة:</label>
-          <input type="date" id="incoming-arrival-date" class="form-control" />
-        </div>
-        <div style="border: 2px dashed rgba(16, 185, 129, 0.4); border-radius: var(--radius-md); padding: 2rem 1rem; text-align: center; background: rgba(16, 185, 129, 0.03); cursor: pointer;" onclick="document.getElementById('incoming-file-input').click()">
-          <div style="font-size: 2.5rem; margin-bottom: 0.5rem;">📊</div>
-          <div style="font-weight: 700; color: var(--color-emerald); margin-bottom: 0.35rem;">اضغط لاختيار شيت البضاعة الواردة (.xlsx, .csv)</div>
-          <div style="font-size: 0.75rem; color: var(--text-muted);">أو اسحب وأفلت الملف هنا مباشرة</div>
-          <input type="file" id="incoming-file-input" accept=".xlsx,.xls,.csv" style="display: none;" onchange="window.InventoryComponent.handleIncomingFileUpload(this.files[0])" />
-        </div>
+
+      <p style="font-size: 0.88rem; color: var(--text-secondary); margin-bottom: 1.25rem; line-height: 1.6;">
+        ارفع شيت البضاعة الواردة (Excel أو CSV) ليتم إضافة الكميات فورياً للمخزن وتحديد فترات وتواريخ الصلاحية آلياً (3 أيام للساندوتشات والسلاد، 5 أيام للمخبوزات، 14 يوم للمجمدات).
+      </p>
+
+      <div class="form-group" style="margin-bottom: 1.25rem;">
+        <label class="form-label" for="incoming-arrival-date">تاريخ وصول البضاعة:</label>
+        <input type="date" id="incoming-arrival-date" class="form-control" />
+      </div>
+
+      <div style="border: 2px dashed rgba(16, 185, 129, 0.4); border-radius: var(--radius-md); padding: 2rem 1rem; text-align: center; background: rgba(16, 185, 129, 0.03); cursor: pointer; transition: all 0.2s ease;" onclick="document.getElementById('incoming-file-input').click()">
+        <div style="font-size: 2.5rem; margin-bottom: 0.5rem;">📊</div>
+        <div style="font-weight: 700; color: var(--color-emerald); margin-bottom: 0.35rem;">اضغط لاختيار شيت البضاعة الواردة (.xlsx, .csv)</div>
+        <div style="font-size: 0.75rem; color: var(--text-muted);">أو اسحب وأفلت الملف هنا مباشرة</div>
+        <input type="file" id="incoming-file-input" accept=".xlsx,.xls,.csv" style="display: none;" onchange="window.InventoryComponent.handleIncomingFileUpload(this.files[0])" />
+      </div>
+
+      <div class="modal-actions" style="display: flex; justify-content: flex-end; gap: 0.75rem; margin-top: 1.25rem;">
+        <button type="button" class="btn btn-secondary" onclick="window.ModalComponent.close('modal-import-incoming-stock')">إلغاء</button>
       </div>
     </div>
   </div>
 
   <!-- Modal: Import Waste Sheet -->
-  <div class="modal-backdrop" id="modal-import-waste-sheet">
-    <div class="modal-dialog">
-      <div class="modal-header">
-        <h3 class="modal-title">🗑️ استيراد وخصم شيت الويست (الهالك)</h3>
-        <button class="modal-close" data-close="modal-import-waste-sheet">&times;</button>
+  <div class="modal-overlay" id="modal-import-waste-sheet" role="dialog" aria-modal="true">
+    <div class="modal-content" style="max-width: 520px;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem;">
+        <h3 style="font-weight: 700; color: var(--color-rose); display: flex; align-items: center; gap: 0.5rem; font-size: 1.15rem;">
+          <span>🗑️</span>
+          <span>استيراد وخصم شيت الويست (الهالك)</span>
+        </h3>
+        <button class="btn-icon" onclick="window.ModalComponent.close('modal-import-waste-sheet')" style="border: none;" aria-label="إغلاق">✕</button>
       </div>
-      <div class="modal-body">
-        <p style="font-size: 0.88rem; color: var(--text-secondary); margin-bottom: 1rem;">
-          ارفع شيت الويست (مثل <code>west 11.xlsx</code>): سيقوم النظام آلياً بقراءة كميات الهالك لكل يوم، وخصمها من رصيد المخزن، وتسجيلها في تقرير الهالك المالي.
-        </p>
-        <div style="border: 2px dashed rgba(244, 63, 94, 0.4); border-radius: var(--radius-md); padding: 2rem 1rem; text-align: center; background: rgba(244, 63, 94, 0.03); cursor: pointer;" onclick="document.getElementById('waste-file-input').click()">
-          <div style="font-size: 2.5rem; margin-bottom: 0.5rem;">🗑️</div>
-          <div style="font-weight: 700; color: var(--color-rose); margin-bottom: 0.35rem;">اضغط لاختيار شيت الويست (.xlsx, .csv)</div>
-          <div style="font-size: 0.75rem; color: var(--text-muted);">يدعم شيتات متابعة الأصناف 30 يوم وشيتات الويست المباشرة</div>
-          <input type="file" id="waste-file-input" accept=".xlsx,.xls,.csv" style="display: none;" onchange="window.InventoryComponent.handleWasteFileUpload(this.files[0])" />
-        </div>
+
+      <p style="font-size: 0.88rem; color: var(--text-secondary); margin-bottom: 1.25rem; line-height: 1.6;">
+        ارفع شيت الويست (مثل <code>west 11.xlsx</code>): سيقوم النظام آلياً بقراءة كميات الهالك لكل يوم، وخصمها من رصيد المخزن، وتسجيلها في تقرير الهالك المالي.
+      </p>
+
+      <div style="border: 2px dashed rgba(244, 63, 94, 0.4); border-radius: var(--radius-md); padding: 2rem 1rem; text-align: center; background: rgba(244, 63, 94, 0.03); cursor: pointer; transition: all 0.2s ease;" onclick="document.getElementById('waste-file-input').click()">
+        <div style="font-size: 2.5rem; margin-bottom: 0.5rem;">🗑️</div>
+        <div style="font-weight: 700; color: var(--color-rose); margin-bottom: 0.35rem;">اضغط لاختيار شيت الويست (.xlsx, .csv)</div>
+        <div style="font-size: 0.75rem; color: var(--text-muted);">يدعم شيتات متابعة الأصناف 30 يوم وشيتات الويست المباشرة</div>
+        <input type="file" id="waste-file-input" accept=".xlsx,.xls,.csv" style="display: none;" onchange="window.InventoryComponent.handleWasteFileUpload(this.files[0])" />
+      </div>
+
+      <div class="modal-actions" style="display: flex; justify-content: flex-end; gap: 0.75rem; margin-top: 1.25rem;">
+        <button type="button" class="btn btn-secondary" onclick="window.ModalComponent.close('modal-import-waste-sheet')">إلغاء</button>
       </div>
     </div>
   </div>
 
   <!-- Modal: Import Initial Baseline Count -->
-  <div class="modal-backdrop" id="modal-import-initial-count">
-    <div class="modal-dialog">
-      <div class="modal-header">
-        <h3 class="modal-title">📋 تسوية / استيراد شيت جرد المخزن</h3>
-        <button class="modal-close" data-close="modal-import-initial-count">&times;</button>
+  <div class="modal-overlay" id="modal-import-initial-count" role="dialog" aria-modal="true">
+    <div class="modal-content" style="max-width: 520px;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem;">
+        <h3 style="font-weight: 700; color: var(--accent-gold); display: flex; align-items: center; gap: 0.5rem; font-size: 1.15rem;">
+          <span>📋</span>
+          <span>تسوية / استيراد شيت جرد المخزن</span>
+        </h3>
+        <button class="btn-icon" onclick="window.ModalComponent.close('modal-import-initial-count')" style="border: none;" aria-label="إغلاق">✕</button>
       </div>
-      <div class="modal-body">
-        <p style="font-size: 0.88rem; color: var(--text-secondary); margin-bottom: 1rem;">
-          ارفع شيت الجرد الفعلي للمخزن (مثل <code>جرد موكا 9-11-2026.xlsx</code>) لإعادة ضبط وتهيئة رصيد البداية لكافة الأصناف.
-        </p>
-        <div class="form-group" style="margin-bottom: 1rem;">
-          <label class="form-label">تاريخ الجرد الأساسي:</label>
-          <input type="date" id="initial-baseline-date" class="form-control" value="2026-11-09" />
-        </div>
-        <div style="border: 2px dashed var(--border-color); border-radius: var(--radius-md); padding: 2rem 1rem; text-align: center; background: rgba(255, 255, 255, 0.02); cursor: pointer;" onclick="document.getElementById('initial-file-input').click()">
-          <div style="font-size: 2.5rem; margin-bottom: 0.5rem;">📋</div>
-          <div style="font-weight: 700; color: var(--text-primary); margin-bottom: 0.35rem;">اضغط لاختيار شيت الجرد (.xlsx, .csv)</div>
-          <div style="font-size: 0.75rem; color: var(--text-muted);">يتعرف تلقائياً على أعمدة الأيام والأصناف</div>
-          <input type="file" id="initial-file-input" accept=".xlsx,.xls,.csv" style="display: none;" onchange="window.InventoryComponent.handleInitialFileUpload(this.files[0])" />
-        </div>
+
+      <p style="font-size: 0.88rem; color: var(--text-secondary); margin-bottom: 1.25rem; line-height: 1.6;">
+        ارفع شيت الجرد الفعلي للمخزن (مثل <code>جرد موكا 9-11-2026.xlsx</code>) لإعادة ضبط وتهيئة رصيد البداية لكافة الأصناف.
+      </p>
+
+      <div class="form-group" style="margin-bottom: 1.25rem;">
+        <label class="form-label" for="initial-baseline-date">تاريخ الجرد الأساسي:</label>
+        <input type="date" id="initial-baseline-date" class="form-control" value="2026-11-09" />
+      </div>
+
+      <div style="border: 2px dashed var(--border-color); border-radius: var(--radius-md); padding: 2rem 1rem; text-align: center; background: rgba(255, 255, 255, 0.02); cursor: pointer; transition: all 0.2s ease;" onclick="document.getElementById('initial-file-input').click()">
+        <div style="font-size: 2.5rem; margin-bottom: 0.5rem;">📋</div>
+        <div style="font-weight: 700; color: var(--text-primary); margin-bottom: 0.35rem;">اضغط لاختيار شيت الجرد (.xlsx, .csv)</div>
+        <div style="font-size: 0.75rem; color: var(--text-muted);">يتعرف تلقائياً على أعمدة الأيام والأصناف</div>
+        <input type="file" id="initial-file-input" accept=".xlsx,.xls,.csv" style="display: none;" onchange="window.InventoryComponent.handleInitialFileUpload(this.files[0])" />
+      </div>
+
+      <div class="modal-actions" style="display: flex; justify-content: flex-end; gap: 0.75rem; margin-top: 1.25rem;">
+        <button type="button" class="btn btn-secondary" onclick="window.ModalComponent.close('modal-import-initial-count')">إلغاء</button>
       </div>
     </div>
   </div>
 
   <!-- Modal: Adjust Single Item Stock -->
-  <div class="modal-backdrop" id="modal-adjust-stock">
-    <div class="modal-dialog">
-      <div class="modal-header">
-        <h3 class="modal-title">✏️ تسوية رصيد صنف</h3>
-        <button class="modal-close" data-close="modal-adjust-stock">&times;</button>
+  <div class="modal-overlay" id="modal-adjust-stock" role="dialog" aria-modal="true">
+    <div class="modal-content" style="max-width: 480px;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem;">
+        <h3 style="font-weight: 700; color: var(--accent-gold); display: flex; align-items: center; gap: 0.5rem; font-size: 1.15rem;">
+          <span>✏️</span>
+          <span>تسوية رصيد صنف</span>
+        </h3>
+        <button class="btn-icon" onclick="window.ModalComponent.close('modal-adjust-stock')" style="border: none;" aria-label="إغلاق">✕</button>
       </div>
+
       <form onsubmit="window.InventoryComponent.submitStockAdjustment(event)">
-        <div class="modal-body">
-          <input type="hidden" id="adjust-item-id" />
-          <div style="margin-bottom: 1rem; padding: 0.75rem; background: rgba(255,255,255,0.03); border: 1px solid var(--border-color); border-radius: var(--radius-sm);">
-            الصنف: <strong id="adjust-item-name" style="color: var(--accent-gold);">—</strong> | الرصيد الحالي المسجل: <strong id="adjust-item-current">0</strong>
-          </div>
-          <div class="form-group" style="margin-bottom: 1rem;">
-            <label class="form-label">الرصيد الفعلي الجديد (العدد بالقطع):</label>
-            <input type="number" id="adjust-new-qty" class="form-control" min="0" required />
-          </div>
-          <div class="form-group">
-            <label class="form-label">سبب التعديل / ملاحظات:</label>
-            <input type="text" id="adjust-reason" class="form-control" placeholder="مثال: تسوية جرد يدوي / زيادة غير مسجلة" value="تسوية جرد يدوية" />
-          </div>
+        <input type="hidden" id="adjust-item-id" />
+        <div style="margin-bottom: 1.25rem; padding: 0.75rem; background: rgba(255,255,255,0.03); border: 1px solid var(--border-color); border-radius: var(--radius-sm); font-size: 0.88rem;">
+          الصنف: <strong id="adjust-item-name" style="color: var(--accent-gold);">—</strong> | الرصيد الحالي: <strong id="adjust-item-current">0</strong>
         </div>
-        <div class="modal-footer">
-          <button type="button" class="btn btn-secondary" data-close="modal-adjust-stock">إلغاء</button>
+
+        <div class="form-group" style="margin-bottom: 1.25rem;">
+          <label class="form-label" for="adjust-new-qty">الرصيد الفعلي الجديد (العدد بالقطع):</label>
+          <input type="number" id="adjust-new-qty" class="form-control" min="0" required />
+        </div>
+
+        <div class="form-group" style="margin-bottom: 1.5rem;">
+          <label class="form-label" for="adjust-reason">سبب التعديل / ملاحظات:</label>
+          <input type="text" id="adjust-reason" class="form-control" placeholder="مثال: تسوية جرد يدوي / زيادة غير مسجلة" value="تسوية جرد يدوية" />
+        </div>
+
+        <div class="modal-actions" style="display: flex; justify-content: flex-end; gap: 0.75rem;">
+          <button type="button" class="btn btn-secondary" onclick="window.ModalComponent.close('modal-adjust-stock')">إلغاء</button>
           <button type="submit" class="btn btn-primary">حفظ التسوية</button>
         </div>
       </form>
@@ -1437,19 +1465,22 @@ West
   </div>
 
   <!-- Modal: View Batches Details -->
-  <div class="modal-backdrop" id="modal-view-batches">
-    <div class="modal-dialog">
-      <div class="modal-header">
-        <h3 class="modal-title" id="batches-modal-title">📦 تفاصيل الباتشات والتواريخ</h3>
-        <button class="modal-close" data-close="modal-view-batches">&times;</button>
+  <div class="modal-overlay" id="modal-view-batches" role="dialog" aria-modal="true">
+    <div class="modal-content" style="max-width: 520px;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem;">
+        <h3 style="font-weight: 700; color: var(--accent-gold); display: flex; align-items: center; gap: 0.5rem; font-size: 1.15rem;" id="batches-modal-title">
+          <span>📦</span>
+          <span>تفاصيل الباتشات والتواريخ</span>
+        </h3>
+        <button class="btn-icon" onclick="window.ModalComponent.close('modal-view-batches')" style="border: none;" aria-label="إغلاق">✕</button>
       </div>
-      <div class="modal-body">
-        <div id="batches-modal-list">
-          <!-- Dynamically filled -->
-        </div>
+
+      <div id="batches-modal-list" style="max-height: 360px; overflow-y: auto; margin-bottom: 1.25rem;">
+        <!-- Dynamically filled -->
       </div>
-      <div class="modal-footer">
-        <button type="button" class="btn btn-secondary" data-close="modal-view-batches">إغلاق</button>
+
+      <div class="modal-actions" style="display: flex; justify-content: flex-end;">
+        <button type="button" class="btn btn-secondary" onclick="window.ModalComponent.close('modal-view-batches')">إغلاق</button>
       </div>
     </div>
   </div>

@@ -447,18 +447,17 @@ class AccountingComponent {
       }],
       generationConfig: {
         temperature: 0.1,
+        maxOutputTokens: 16384,
         responseMimeType: "application/json"
       }
     };
 
     const models = [
-      "gemini-3.1-flash-lite",
+      "gemini-2.5-flash",
+      "gemini-flash-latest",
       "gemini-flash-lite-latest",
-      "gemini-3.5-flash-lite",
-      "gemini-3.5-flash",
-      "gemini-3.6-flash",
-      "gemini-3.7-flash",
-      "gemini-3.8-flash"
+      "gemini-2.5-flash-lite",
+      "gemini-3.1-flash-lite"
     ];
     let lastErr = null;
 
@@ -522,14 +521,18 @@ class AccountingComponent {
         const itemsSubtotal = items.reduce((s, it) => s + it.totalPrice, 0);
         const itemsTaxInclSum = items.reduce((s, it) => s + it.taxIncluded, 0);
 
-        // Ground truth: When items are extracted, their exact mathematical sum is the true audited invoice total
-        const untaxedSubtotal = items.length > 0
-          ? parseFloat(itemsSubtotal.toFixed(2))
-          : (Number(parsed.untaxedSubtotal || parsed.subtotal) || 0);
+        // Ground truth: The printed footer grand total and untaxed subtotal from the supplier's receipt
+        // are the legal, official financial amounts. Line items are audited against them.
+        const parsedSubtotal = Number(parsed.untaxedSubtotal || parsed.subtotal) || 0;
+        const parsedGrandTotal = Number(parsed.grandTotal || parsed.amount) || 0;
 
-        const grandTotal = items.length > 0
-          ? parseFloat(itemsTaxInclSum.toFixed(2))
-          : (Number(parsed.grandTotal || parsed.amount) || 0);
+        const untaxedSubtotal = parsedSubtotal > 0
+          ? parsedSubtotal
+          : (items.length > 0 ? parseFloat(itemsSubtotal.toFixed(2)) : 0);
+
+        const grandTotal = parsedGrandTotal > 0
+          ? parsedGrandTotal
+          : (items.length > 0 ? parseFloat(itemsTaxInclSum.toFixed(2)) : 0);
 
         // Strict dynamic taxes from invoice
         const rawVat14 = Number(parsed.vat14) || 0;
@@ -1067,9 +1070,12 @@ class AccountingComponent {
       return s + (base * (1 + rate));
     }, 0);
 
-    // Exact mathematical truth from the detected items
-    const subtotal = items.length > 0 ? parseFloat(itemsSubtotal.toFixed(2)) : Number(d.subtotal || 0);
-    const amount = items.length > 0 ? parseFloat(itemsTaxInclSum.toFixed(2)) : Number(d.amount || 0);
+    // Printed official financial amounts take precedence over partial item sums
+    const printedSubtotal = Number(d.subtotal || d.untaxedSubtotal || 0);
+    const printedAmount = Number(d.amount || d.grandTotal || 0);
+
+    const subtotal = printedSubtotal > 0 ? printedSubtotal : (items.length > 0 ? parseFloat(itemsSubtotal.toFixed(2)) : 0);
+    const amount = printedAmount > 0 ? printedAmount : (items.length > 0 ? parseFloat(itemsTaxInclSum.toFixed(2)) : 0);
     const taxAmount = parseFloat((amount - subtotal).toFixed(2));
 
     d.subtotal = subtotal;
@@ -1533,8 +1539,11 @@ class AccountingComponent {
       return s + (base * (1 + rate));
     }, 0);
 
-    const subtotal = allItems.length > 0 ? parseFloat(allItemsSubtotal.toFixed(2)) : Number(inv.subtotal || 0);
-    const amount = allItems.length > 0 ? parseFloat(allItemsTaxInclSum.toFixed(2)) : Number(inv.amount || 0);
+    const printedSubtotal = Number(inv.subtotal || 0);
+    const printedAmount = Number(inv.amount || 0);
+
+    const subtotal = printedSubtotal > 0 ? printedSubtotal : (allItems.length > 0 ? parseFloat(allItemsSubtotal.toFixed(2)) : 0);
+    const amount = printedAmount > 0 ? printedAmount : (allItems.length > 0 ? parseFloat(allItemsTaxInclSum.toFixed(2)) : 0);
     const taxAmount = parseFloat((amount - subtotal).toFixed(2));
 
     let vat14 = Number(inv.taxDetails?.vat14 || 0);
@@ -1720,7 +1729,7 @@ class AccountingComponent {
       btn.textContent = "⚡ جاري الفحص واستخراج الأصناف بالـ AI...";
     }
 
-    const apiKey = localStorage.getItem("moka_gemini_api_key") || "";
+    const apiKey = (typeof localStorage !== "undefined" ? (localStorage.getItem("GEMINI_API_KEY") || localStorage.getItem("moka_gemini_api_key")) : "") || "";
 
     try {
       let res;
